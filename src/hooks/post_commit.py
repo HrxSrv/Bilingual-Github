@@ -66,22 +66,12 @@ def sync_translations(original_file):
     for lang in target_langs:
         translated_file = get_translated_path(original_file, lang)
         translated_file.parent.mkdir(parents=True, exist_ok=True)
-        needs_translation = True
         
-        if translated_file.exists():
-            existing_translation = read_file(translated_file)
-            diff = list(unified_diff(
-                existing_translation.splitlines(),
-                content.splitlines(),
-                lineterm=""
-            ))
-            needs_translation = bool(diff)
-            
-        if needs_translation:
-            print(f"Translating {original_file} from {source_lang} to {lang}")
-            translated_content = translate_text(content, lang)
-            if translated_content:
-                translated_file.write_text(translated_content, encoding='utf-8')
+        # Always translate when source file changes - remove the diff logic
+        print(f"Translating {original_file} from {source_lang} to {lang}")
+        translated_content = translate_text(content, lang)
+        if translated_content:
+            translated_file.write_text(translated_content, encoding='utf-8')
 
 def find_markdown_files():
     markdown_files = []
