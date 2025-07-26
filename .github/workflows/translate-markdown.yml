@@ -66,6 +66,11 @@ jobs:
           CHANGED_FILES: ${{ inputs.changed_files }}
           DELETED_FILES: ${{ inputs.deleted_files }}
         run: |
+          export OPENAI_API_KEY="${OPENAI_API_KEY}"
+          export IS_INITIAL_SETUP="${IS_INITIAL_SETUP}"
+          export CHANGED_FILES="${CHANGED_FILES}"
+          export DELETED_FILES="${DELETED_FILES}"
+          
           if [ "$IS_INITIAL_SETUP" = "true" ]; then
             echo "Performing initial setup translation"
             python ../bilingual-github/src/hooks/post_commit.py --initial-setup
