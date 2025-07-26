@@ -1,0 +1,90 @@
+name: Translate Markdown Files
+
+on:
+  workflow_call:
+    secrets:
+      OPENAI_API_KEY:
+        required: true
+    inputs:
+      is_initial_setup:
+        required: false
+        type: boolean
+        default: false
+        description: 'Whether this is the initial setup run'
+      changed_files:
+        required: false
+        type: string
+        default: ''
+        description: 'Comma-separated list of changed files'
+      deleted_files:
+        required: false
+        type: string
+        default: ''
+        description: 'Comma-separated list of deleted files'
+
+jobs:
+  translate-markdown:
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+
+    steps:
+      - name: Checkout Translation Tools Repository
+        uses: actions/checkout@v3
+        with:
+          repository: rimoapp/bilingual-github
+          path: bilingual-github
+
+      - name: Checkout Target Repository
+        uses: actions/checkout@v3
+        with:
+          path: target-repo
+          fetch-depth: 0  # Fetch all history for better diff detection
+
+      - name: Set Up Python
+        uses: actions/setup-python@v4
+        with:
+          python-version: '3.8'
+
+      - name: Install Translation Dependencies
+        working-directory: bilingual-github
+        run: |
+          python -m pip install --upgrade pip
+          pip install -r requirements.txt
+
+      - name: Configure Git User
+        working-directory: target-repo
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "github-actions[bot]@users.noreply.github.com"
+
+      - name: Generate Markdown Translations
+        working-directory: target-repo
+        env:
+          OPENAI_API_KEY: ${{ secrets.OPENAI_API_KEY }}
+          IS_INITIAL_SETUP: ${{ inputs.is_initial_setup }}
+          CHANGED_FILES: ${{ inputs.changed_files }}
+          DELETED_FILES: ${{ inputs.deleted_files }}
+        run: |
+          if [ "$IS_INITIAL_SETUP" = "true" ]; then
+            echo "Performing initial setup translation"
+            python ../bilingual-github/src/hooks/post_commit.py --initial-setup
+          elif [ -n "$CHANGED_FILES" ] || [ -n "$DELETED_FILES" ]; then
+            echo "Translating changed files: $CHANGED_FILES"
+            echo "Deleting translated files for: $DELETED_FILES"
+            python ../bilingual-github/src/hooks/post_commit.py --files "$CHANGED_FILES" --deleted-files "$DELETED_FILES"
+          else
+            echo "Translating all markdown files"
+            python ../bilingual-github/src/hooks/post_commit.py
+          fi
+
+      - name: Commit and Push Translations
+        working-directory: target-repo
+        run: |
+          git add -A
+          if git diff --cached --quiet; then
+            echo "No changes to commit"
+          else
+            git commit -m "Update markdown translations"
+            git push
+          fi

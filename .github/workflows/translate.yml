@@ -1,0 +1,82 @@
+name: Translate GitHub Content
+
+on:
+  workflow_call:
+    secrets:
+      OPENAI_API_KEY:
+        required: true
+      REPO_TOKEN:
+        required: true
+        description: 'GitHub token for repository access'
+    inputs:
+      issue_number:
+        required: true
+        type: string
+      comment_id:
+        required: false
+        type: string
+        default: ''
+      target_repository:
+        required: true
+        type: string
+        description: 'The repository where the content needs to be translated'
+
+jobs:
+  translate:
+    runs-on: ubuntu-latest
+    permissions:
+      issues: write
+      pull-requests: write
+      contents: read
+    
+    steps:
+      - name: Checkout Repository
+        uses: actions/checkout@v3
+        with:
+          repository: rimoapp/bilingual-github
+          path: bilingual-github
+          token: ${{ secrets.REPO_TOKEN }}
+      
+      - name: Set Up Python
+        uses: actions/setup-python@v4
+        with:
+          python-version: "3.8"
+      
+      - name: Install Dependencies
+        run: |
+          cd bilingual-github
+          python -m pip install --upgrade pip
+          pip install -r requirements.txt
+      
+      - name: Translate Content
+        run: |
+          cd bilingual-github
+          case "${{ github.event_name }}" in
+            "issues")
+              python src/actions/translate_issues.py
+              ;;
+            "issue_comment")
+              python src/actions/translate_comments.py
+              ;;
+            "pull_request")
+              python src/actions/translate_prs.py
+              ;;
+            "pull_request_review")
+              python src/actions/translate_prs.py
+              ;;
+            "pull_request_review_comment")
+              python src/actions/translate_prs.py
+              ;;
+            *)
+              echo "Unsupported event type: ${{ github.event_name }}"
+              exit 1
+              ;;
+          esac
+        env:
+          GITHUB_TOKEN: ${{ secrets.REPO_TOKEN }}
+          OPENAI_API_KEY: ${{ secrets.OPENAI_API_KEY }}
+          ISSUE_NUMBER: ${{ inputs.issue_number }}
+          COMMENT_ID: ${{ inputs.comment_id }}
+          PR_NUMBER: ${{ inputs.issue_number }}
+          GITHUB_EVENT_NAME: ${{ github.event_name }}
+          TARGET_REPOSITORY: ${{ inputs.target_repository }} 

@@ -1,0 +1,44 @@
+# name: Translate GitHub Comments
+
+# on:
+#   workflow_call:
+#     secrets:
+#       OPENAI_API_KEY:
+#         required: true
+#     inputs:
+#       issue_number:
+#         required: true
+#         type: string
+#       comment_id:
+#         required: true
+#         type: string
+
+# jobs:
+#   translate:
+#     runs-on: ubuntu-latest
+#     permissions:
+#       issues: write
+    
+#     steps:
+#       - name: Checkout Repository
+#         uses: actions/checkout@v3
+#         with:
+#           repository: rimoapp/bilingual-github
+      
+#       - name: Set Up Python
+#         uses: actions/setup-python@v4
+#         with:
+#           python-version: "3.8"
+      
+#       - name: Install Dependencies
+#         run: |
+#           python -m pip install --upgrade pip
+#           pip install -r requirements.txt
+      
+#       - name: Translate Comments
+#         run: python src/actions/translate_comments.py
+#         env:
+#           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+#           OPENAI_API_KEY: ${{ secrets.OPENAI_API_KEY }}
+#           ISSUE_NUMBER: ${{ inputs.issue_number }}
+#           COMMENT_ID: ${{ inputs.comment_id }}

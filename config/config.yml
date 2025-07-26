@@ -1,0 +1,9 @@
+source_language: en
+target_languages:
+  - ja
+  - fr
+
+llm:
+  provider: openai
+  model: gpt-4o-mini
+  api_key: OPENAI_API_KEY
