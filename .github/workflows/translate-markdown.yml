@@ -21,18 +21,18 @@ on:
         type: string
         default: ''
         description: 'Comma-separated list of deleted files'
-
+permissions:
+      contents: write
 jobs:
   translate-markdown:
     runs-on: ubuntu-latest
-    permissions:
-      contents: write
+    
 
     steps:
       - name: Checkout Translation Tools Repository
         uses: actions/checkout@v3
         with:
-          repository: rimoapp/bilingual-github
+          repository: hrxsrv/bilingual-github
           path: bilingual-github
 
       - name: Checkout Target Repository
