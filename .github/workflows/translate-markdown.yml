@@ -66,21 +66,18 @@ jobs:
           CHANGED_FILES: ${{ inputs.changed_files }}
           DELETED_FILES: ${{ inputs.deleted_files }}
         run: |
-          export OPENAI_API_KEY="${OPENAI_API_KEY}"
-          export IS_INITIAL_SETUP="${IS_INITIAL_SETUP}"
-          export CHANGED_FILES="${CHANGED_FILES}"
-          export DELETED_FILES="${DELETED_FILES}"
+          echo "Debug: OPENAI_API_KEY is set: $([ -n "$OPENAI_API_KEY" ] && echo "yes" || echo "no")"
           
           if [ "$IS_INITIAL_SETUP" = "true" ]; then
             echo "Performing initial setup translation"
-            python ../bilingual-github/src/hooks/post_commit.py --initial-setup
+            OPENAI_API_KEY="${OPENAI_API_KEY}" python ../bilingual-github/src/hooks/post_commit.py --initial-setup
           elif [ -n "$CHANGED_FILES" ] || [ -n "$DELETED_FILES" ]; then
             echo "Translating changed files: $CHANGED_FILES"
             echo "Deleting translated files for: $DELETED_FILES"
-            python ../bilingual-github/src/hooks/post_commit.py --files "$CHANGED_FILES" --deleted-files "$DELETED_FILES"
+            OPENAI_API_KEY="${OPENAI_API_KEY}" python ../bilingual-github/src/hooks/post_commit.py --files "$CHANGED_FILES" --deleted-files "$DELETED_FILES"
           else
             echo "Translating all markdown files"
-            python ../bilingual-github/src/hooks/post_commit.py
+            OPENAI_API_KEY="${OPENAI_API_KEY}" python ../bilingual-github/src/hooks/post_commit.py
           fi
 
       - name: Commit and Push Translations
