@@ -86,47 +86,47 @@ def read_file(file_path):
         with open(file_path, "r", encoding="utf-8-sig") as file:
             return file.read()
 
-def check_simultaneous_updates(files, commit_history):
-    """Check if both language versions were updated recently"""
-    simultaneous_pairs = []
-    current_time = datetime.now()
-    
-    for file_path in files:
-        source_lang = get_file_language(file_path)
-        if not source_lang:
-            continue
-            
-        # Get the corresponding file in other language
-        other_lang = "ja" if source_lang == "en" else "en"
-        other_file = get_translated_path(file_path, other_lang)
-        
-        if not other_file.exists():
-            continue
-            
-        # Check if both files were modified within 100 seconds
-        file_time = commit_history.get(str(file_path), {}).get('timestamp')
-        other_time = commit_history.get(str(other_file), {}).get('timestamp')
-        
-        if file_time and other_time:
-            file_dt = datetime.fromisoformat(file_time)
-            other_dt = datetime.fromisoformat(other_time)
-            
-            if abs((file_dt - other_dt).total_seconds()) <= 100:
-                simultaneous_pairs.append((file_path, str(other_file)))
-    
-    return simultaneous_pairs
+# def check_simultaneous_updates(files, commit_history):
+#     """Check if both language versions were updated recently"""
+#     simultaneous_pairs = []
+#     current_time = datetime.now()
+#     
+#     for file_path in files:
+#         source_lang = get_file_language(file_path)
+#         if not source_lang:
+#             continue
+#             
+#         # Get the corresponding file in other language
+#         other_lang = "ja" if source_lang == "en" else "en"
+#         other_file = get_translated_path(file_path, other_lang)
+#         
+#         if not other_file.exists():
+#             continue
+#             
+#         # Check if both files were modified within 100 seconds
+#         file_time = commit_history.get(str(file_path), {}).get('timestamp')
+#         other_time = commit_history.get(str(other_file), {}).get('timestamp')
+#         
+#         if file_time and other_time:
+#             file_dt = datetime.fromisoformat(file_time)
+#             other_dt = datetime.fromisoformat(other_time)
+#             
+#             if abs((file_dt - other_dt).total_seconds()) <= 100:
+#                 simultaneous_pairs.append((file_path, str(other_file)))
+#     
+#     return simultaneous_pairs
 
-def create_conflict_pr_message(simultaneous_pairs):
-    """Create PR message for simultaneous updates"""
-    message = "# Translation Conflict Detected\n\n"
-    message += "Both language files were modified together. Please review and merge manually with appropriate tags.\n\n"
-    message += "## Affected Files:\n"
-    
-    for en_file, ja_file in simultaneous_pairs:
-        message += f"- {en_file} ↔ {ja_file}\n"
-    
-    message += "\n⚠️ **Manual review required to prevent overwrites**"
-    return message
+# def create_conflict_pr_message(simultaneous_pairs):
+#     """Create PR message for simultaneous updates"""
+#     message = "# Translation Conflict Detected\n\n"
+#     message += "Both language files were modified together. Please review and merge manually with appropriate tags.\n\n"
+#     message += "## Affected Files:\n"
+#     
+#     for en_file, ja_file in simultaneous_pairs:
+#         message += f"- {en_file} ↔ {ja_file}\n"
+#     
+#     message += "\n⚠️ **Manual review required to prevent overwrites**"
+#     return message
 
 def sync_translations(original_file, commit_history, current_commit_hash):
     """Sync translations with commit tracking"""
@@ -207,20 +207,20 @@ def find_markdown_files():
     return markdown_files
 
 def process_specific_files(file_list, commit_history, current_commit_hash):
-    """Process specific files with simultaneous update detection"""
+    """Process specific files"""
     if not file_list:
         return []
     
     files = [f.strip() for f in file_list.split(',') if f.strip().endswith('.md')]
     
-    # Check for simultaneous updates
-    simultaneous_pairs = check_simultaneous_updates(files, commit_history)
-    
-    if simultaneous_pairs:
-        print("⚠️ Simultaneous language updates detected!")
-        print(create_conflict_pr_message(simultaneous_pairs))
-        # Return conflict info instead of processing
-        return simultaneous_pairs
+    # # Check for simultaneous updates
+    # simultaneous_pairs = check_simultaneous_updates(files, commit_history)
+    # 
+    # if simultaneous_pairs:
+    #     print("⚠️ Simultaneous language updates detected!")
+    #     print(create_conflict_pr_message(simultaneous_pairs))
+    #     # Return conflict info instead of processing
+    #     return simultaneous_pairs
     
     # Process files normally
     processed = []
@@ -287,11 +287,11 @@ def main():
         print(f"Processing specific files: {args.files}")
         result = process_specific_files(args.files, commit_history, current_commit_hash)
         
-        # Check if result contains simultaneous update conflicts
-        if result and isinstance(result[0], tuple):
-            print("Creating PR for manual review due to simultaneous updates")
-            # Exit with special code to signal workflow to create PR
-            sys.exit(2)
+        # # Check if result contains simultaneous update conflicts
+        # if result and isinstance(result[0], tuple):
+        #     print("Creating PR for manual review due to simultaneous updates")
+        #     # Exit with special code to signal workflow to create PR
+        #     sys.exit(2)
     else:
         markdown_files = find_markdown_files()
         if not markdown_files:

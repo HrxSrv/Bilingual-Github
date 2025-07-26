@@ -5,8 +5,6 @@ on:
     secrets:
       OPENAI_API_KEY:
         required: true
-      GITHUB_TOKEN:
-        required: true
     inputs:
       is_initial_setup:
         required: false
@@ -31,7 +29,6 @@ on:
 
 permissions:
   contents: write
-  pull-requests: write
 
 jobs:
   translate-markdown:
@@ -49,7 +46,6 @@ jobs:
         with:
           path: target-repo
           fetch-depth: 0
-          token: ${{ secrets.GITHUB_TOKEN }}
 
       - name: Set Up Python
         uses: actions/setup-python@v4
@@ -69,7 +65,6 @@ jobs:
           git config user.email "github-actions[bot]@users.noreply.github.com"
 
       - name: Generate Markdown Translations
-        id: translate
         working-directory: target-repo
         env:
           OPENAI_API_KEY: ${{ secrets.OPENAI_API_KEY }}
@@ -80,49 +75,42 @@ jobs:
         run: |
           echo "Debug: OPENAI_API_KEY is set: $([ -n "$OPENAI_API_KEY" ] && echo "yes" || echo "no")"
           
-          # Run translation script and capture exit code
           if [ "$IS_INITIAL_SETUP" = "true" ]; then
             echo "Performing initial setup translation"
             OPENAI_API_KEY="${OPENAI_API_KEY}" python ../bilingual-github/src/hooks/post_commit.py --initial-setup --commit-hash "$COMMIT_HASH"
-            EXIT_CODE=$?
           elif [ -n "$CHANGED_FILES" ] || [ -n "$DELETED_FILES" ]; then
             echo "Translating changed files: $CHANGED_FILES"
             echo "Deleting translated files for: $DELETED_FILES"
             OPENAI_API_KEY="${OPENAI_API_KEY}" python ../bilingual-github/src/hooks/post_commit.py --files "$CHANGED_FILES" --deleted-files "$DELETED_FILES" --commit-hash "$COMMIT_HASH"
-            EXIT_CODE=$?
           else
             echo "Translating all markdown files"
             OPENAI_API_KEY="${OPENAI_API_KEY}" python ../bilingual-github/src/hooks/post_commit.py --commit-hash "$COMMIT_HASH"
-            EXIT_CODE=$?
           fi
-          
-          echo "exit_code=$EXIT_CODE" >> $GITHUB_OUTPUT
 
-      - name: Create PR for Simultaneous Updates
-        if: steps.translate.outputs.exit_code == '2'
-        uses: peter-evans/create-pull-request@v5
-        with:
-          token: ${{ secrets.GITHUB_TOKEN }}
-          path: target-repo
-          title: "Translation Conflict: Manual Review Required"
-          body: |
-            # Translation Conflict Detected
-            
-            Both language files were modified together. Please review and merge manually with appropriate tags.
-            
-            ## Details
-            - **Trigger**: Simultaneous updates detected (within 100 seconds)
-            - **Action Required**: Manual review to prevent overwrites
-            - **Files**: Check the changed files in this PR
-            
-            ⚠️ **Manual review required to prevent overwrites**
-            
-            Please ensure that the translations are consistent and merge with appropriate version tags.
-          branch: translation-conflict-${{ github.run_number }}
-          delete-branch: true
+      # - name: Create PR for Simultaneous Updates
+      #   if: steps.translate.outputs.exit_code == '2'
+      #   uses: peter-evans/create-pull-request@v5
+      #   with:
+      #     token: ${{ secrets.GITHUB_TOKEN }}
+      #     path: target-repo
+      #     title: "Translation Conflict: Manual Review Required"
+      #     body: |
+      #       # Translation Conflict Detected
+      #       
+      #       Both language files were modified together. Please review and merge manually with appropriate tags.
+      #       
+      #       ## Details
+      #       - **Trigger**: Simultaneous updates detected (within 100 seconds)
+      #       - **Action Required**: Manual review to prevent overwrites
+      #       - **Files**: Check the changed files in this PR
+      #       
+      #       ⚠️ **Manual review required to prevent overwrites**
+      #       
+      #       Please ensure that the translations are consistent and merge with appropriate version tags.
+      #     branch: translation-conflict-${{ github.run_number }}
+      #     delete-branch: true
 
       - name: Commit and Push Translations
-        if: steps.translate.outputs.exit_code != '2'
         working-directory: target-repo
         run: |
           git add -A
