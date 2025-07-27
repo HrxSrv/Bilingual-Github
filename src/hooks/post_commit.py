@@ -33,14 +33,6 @@ def get_file_language(file_path):
 def get_translated_path(original_path, target_lang):
     """Generate translated file path maintaining directory structure"""
     path = Path(original_path)
-    
-    # Special case for README.md
-    if path.name == "README.md":
-        if target_lang == "ja":
-            return path.parent / "README.ja.md"
-        else:
-            return path.parent / "README.md"
-    
     # For other files, maintain directory structure
     if target_lang == "ja":
         # Convert filename.md to filename.ja.md
@@ -186,23 +178,17 @@ def sync_translations(original_file, commit_history, current_commit_hash):
     return translated
 
 def find_markdown_files():
-    """Find all markdown files in project"""
+    """Find all markdown files in project (consistent with workflow)"""
     markdown_files = []
     
-    # Add README.md if it exists
-    if os.path.exists('README.md'):
-        markdown_files.append('README.md')
-    
-    # Add README.ja.md if it exists
-    if os.path.exists('README.ja.md'):
-        markdown_files.append('README.ja.md')
-    
-    # Add all .md files from docs directory
-    if os.path.exists('docs'):
-        for root, _, files in os.walk('docs'):
-            for file in files:
-                if file.endswith('.md'):
-                    markdown_files.append(os.path.join(root, file))
+    # Recursively find all .md and .ja.md files from project root
+    for root, _, files in os.walk('.'):
+        for file in files:
+            if file.endswith('.md'):  # Includes .ja.md files
+                file_path = os.path.join(root, file)
+                # Skip hidden directories (.git, .github, etc.)
+                if not any(part.startswith('.') for part in Path(file_path).parts):
+                    markdown_files.append(file_path)
     
     return markdown_files
 
