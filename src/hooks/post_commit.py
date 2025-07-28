@@ -93,7 +93,7 @@ def rename_ambiguous_md_file(file_path):
     path = Path(file_path)
     
     # Skip README.md and already explicit files
-    if path.name == "README.md" or path.name.endswith('.en.md') or path.name.endswith('.ja.md'):
+    if (path.name.upper() == "README.MD" or path.name.endswith('.en.md') or path.name.endswith('.ja.md')):
         return file_path
     
     if path.name.endswith('.md'):
