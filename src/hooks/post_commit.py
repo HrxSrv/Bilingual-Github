@@ -17,34 +17,137 @@ from utils.translation import translate_text
 TARGET_LANGUAGES = ["en", "ja"]
 COMMIT_HASH_FILE = ".translation_commits.json"
 
+def detect_language(content):
+    """Simple language detection based on character patterns"""
+    # Count Japanese characters (Hiragana, Katakana, Kanji)
+    japanese_chars = len(re.findall(r'[\u3040-\u309F\u30A0-\u30FF\u4E00-\u9FAF]', content))
+    total_chars = len(re.sub(r'\s', '', content))
+    
+    if total_chars == 0:
+        return "en"  # Default to English for empty files
+    
+    japanese_ratio = japanese_chars / total_chars
+    return "ja" if japanese_ratio > 0.1 else "en"
+
 def get_file_language(file_path):
     """Determine language based on file extension convention"""
     path = Path(file_path)
     
-    # Check for .ja.md extension
+    # Special case for README.md - detect language from content
+    if path.name == "README.md":
+        if path.exists():
+            content = read_file(file_path)
+            return detect_language(content)
+        return "en"  # Default README to English
+    
+    # Check for explicit language extensions
     if path.name.endswith('.ja.md'):
         return "ja"
-    # All other .md files are English
-    elif path.name.endswith('.md'):
+    elif path.name.endswith('.en.md'):
         return "en"
+    elif path.name.endswith('.md'):
+        # For other .md files, detect language and rename
+        if path.exists():
+            content = read_file(file_path)
+            detected_lang = detect_language(content)
+            return detected_lang
+        return "en"  # Default to English
     else:
         return None
 
 def get_translated_path(original_path, target_lang):
     """Generate translated file path maintaining directory structure"""
     path = Path(original_path)
-    # For other files, maintain directory structure
-    if target_lang == "ja":
-        # Convert filename.md to filename.ja.md
-        stem = path.stem
-        return path.parent / f"{stem}.ja.md"
-    else:
-        # Convert filename.ja.md to filename.md
-        if path.name.endswith('.ja.md'):
-            stem = path.name[:-6]  # Remove .ja.md
-            return path.parent / f"{stem}.md"
+    
+    # Special case for README.md
+    if path.name == "README.md":
+        if target_lang == "ja":
+            return path.parent / "README.ja.md"
         else:
-            return path
+            return path.parent / "README.en.md"
+    
+    # Handle other files
+    if target_lang == "ja":
+        if path.name.endswith('.en.md'):
+            # Convert filename.en.md to filename.ja.md
+            stem = path.name[:-6]  # Remove .en.md
+            return path.parent / f"{stem}.ja.md"
+        elif path.name.endswith('.md'):
+            # Convert filename.md to filename.ja.md
+            stem = path.stem
+            return path.parent / f"{stem}.ja.md"
+    else:  # target_lang == "en"
+        if path.name.endswith('.ja.md'):
+            # Convert filename.ja.md to filename.en.md
+            stem = path.name[:-6]  # Remove .ja.md
+            return path.parent / f"{stem}.en.md"
+        elif path.name.endswith('.md'):
+            # Convert filename.md to filename.en.md
+            stem = path.stem
+            return path.parent / f"{stem}.en.md"
+    
+    return path
+
+def rename_ambiguous_md_file(file_path):
+    """Rename .md file to .en.md or .ja.md based on detected language"""
+    path = Path(file_path)
+    
+    # Skip README.md and already explicit files
+    if path.name == "README.md" or path.name.endswith('.en.md') or path.name.endswith('.ja.md'):
+        return file_path
+    
+    if path.name.endswith('.md'):
+        content = read_file(file_path)
+        detected_lang = detect_language(content)
+        
+        # Create new name with explicit language
+        stem = path.stem
+        new_name = f"{stem}.{detected_lang}.md"
+        new_path = path.parent / new_name
+        
+        # Rename the file
+        print(f"Renaming {file_path} to {new_path} (detected: {detected_lang})")
+        os.rename(file_path, new_path)
+        return str(new_path)
+    
+    return file_path
+
+def check_simultaneous_edits(changed_files):
+    """Check if both language pairs were edited in the same changeset"""
+    files_set = set(changed_files)
+    skip_files = set()
+    
+    for file_path in changed_files:
+        if file_path in skip_files:
+            continue
+            
+        path = Path(file_path)
+        
+        # Special case for README.md
+        if path.name == "README.md":
+            readme_ja = path.parent / "README.ja.md"
+            if str(readme_ja) in files_set:
+                print(f"Simultaneous edit detected: {file_path} and {readme_ja}")
+                skip_files.add(file_path)
+                skip_files.add(str(readme_ja))
+            continue
+        
+        # Check for paired files
+        if path.name.endswith('.en.md'):
+            stem = path.name[:-6]  # Remove .en.md
+            pair_path = path.parent / f"{stem}.ja.md"
+        elif path.name.endswith('.ja.md'):
+            stem = path.name[:-6]  # Remove .ja.md
+            pair_path = path.parent / f"{stem}.en.md"
+        else:
+            continue
+            
+        if str(pair_path) in files_set:
+            print(f"Simultaneous edit detected: {file_path} and {pair_path}")
+            skip_files.add(file_path)
+            skip_files.add(str(pair_path))
+    
+    return skip_files
 
 def get_file_hash(file_path):
     """Get hash of file content for change detection"""
@@ -78,80 +181,40 @@ def read_file(file_path):
         with open(file_path, "r", encoding="utf-8-sig") as file:
             return file.read()
 
-# def check_simultaneous_updates(files, commit_history):
-#     """Check if both language versions were updated recently"""
-#     simultaneous_pairs = []
-#     current_time = datetime.now()
-#     
-#     for file_path in files:
-#         source_lang = get_file_language(file_path)
-#         if not source_lang:
-#             continue
-#             
-#         # Get the corresponding file in other language
-#         other_lang = "ja" if source_lang == "en" else "en"
-#         other_file = get_translated_path(file_path, other_lang)
-#         
-#         if not other_file.exists():
-#             continue
-#             
-#         # Check if both files were modified within 100 seconds
-#         file_time = commit_history.get(str(file_path), {}).get('timestamp')
-#         other_time = commit_history.get(str(other_file), {}).get('timestamp')
-#         
-#         if file_time and other_time:
-#             file_dt = datetime.fromisoformat(file_time)
-#             other_dt = datetime.fromisoformat(other_time)
-#             
-#             if abs((file_dt - other_dt).total_seconds()) <= 100:
-#                 simultaneous_pairs.append((file_path, str(other_file)))
-#     
-#     return simultaneous_pairs
-
-# def create_conflict_pr_message(simultaneous_pairs):
-#     """Create PR message for simultaneous updates"""
-#     message = "# Translation Conflict Detected\n\n"
-#     message += "Both language files were modified together. Please review and merge manually with appropriate tags.\n\n"
-#     message += "## Affected Files:\n"
-#     
-#     for en_file, ja_file in simultaneous_pairs:
-#         message += f"- {en_file} ↔ {ja_file}\n"
-#     
-#     message += "\n⚠️ **Manual review required to prevent overwrites**"
-#     return message
-
 def sync_translations(original_file, commit_history, current_commit_hash):
     """Sync translations with commit tracking"""
     if not os.path.exists(original_file):
         print(f"File {original_file} not found, skipping")
         return False
     
-    source_lang = get_file_language(original_file)
+    # First, handle .md file renaming if needed
+    processed_file = rename_ambiguous_md_file(original_file)
+    
+    source_lang = get_file_language(processed_file)
     if not source_lang:
-        print(f"Cannot determine language for {original_file}, skipping")
+        print(f"Cannot determine language for {processed_file}, skipping")
         return False
     
     # Get file hash for change detection
-    current_hash = get_file_hash(original_file)
-    file_key = str(original_file)
+    current_hash = get_file_hash(processed_file)
+    file_key = str(processed_file)
     
     # Check if file was already processed with this hash
     if (file_key in commit_history and 
         commit_history[file_key].get('hash') == current_hash and
         commit_history[file_key].get('commit') == current_commit_hash):
-        print(f"File {original_file} already processed with current hash, skipping")
+        print(f"File {processed_file} already processed with current hash, skipping")
         return False
     
-    content = read_file(original_file)
+    content = read_file(processed_file)
     target_langs = [lang for lang in TARGET_LANGUAGES if lang != source_lang]
     
     translated = False
     for lang in target_langs:
-        translated_file = get_translated_path(original_file, lang)
+        translated_file = get_translated_path(processed_file, lang)
         translated_file.parent.mkdir(parents=True, exist_ok=True)
         
-        # Always translate if source file changed
-        print(f"Translating {original_file} ({source_lang}) → {translated_file} ({lang})")
+        print(f"Translating {processed_file} ({source_lang}) → {translated_file} ({lang})")
         translated_content = translate_text(content, lang)
         
         if translated_content:
@@ -178,13 +241,13 @@ def sync_translations(original_file, commit_history, current_commit_hash):
     return translated
 
 def find_markdown_files():
-    """Find all markdown files in project (consistent with workflow)"""
+    """Find all markdown files in project"""
     markdown_files = []
     
-    # Recursively find all .md and .ja.md files from project root
+    # Recursively find all .md, .en.md, and .ja.md files from project root
     for root, _, files in os.walk('.'):
         for file in files:
-            if file.endswith('.md'):  # Includes .ja.md files
+            if file.endswith('.md'):  # Includes .en.md and .ja.md files
                 file_path = os.path.join(root, file)
                 # Skip hidden directories (.git, .github, etc.)
                 if not any(part.startswith('.') for part in Path(file_path).parts):
@@ -193,24 +256,25 @@ def find_markdown_files():
     return markdown_files
 
 def process_specific_files(file_list, commit_history, current_commit_hash):
-    """Process specific files"""
+    """Process specific files with simultaneous edit detection"""
     if not file_list:
         return []
     
     files = [f.strip() for f in file_list.split(',') if f.strip().endswith('.md')]
     
-    # # Check for simultaneous updates
-    # simultaneous_pairs = check_simultaneous_updates(files, commit_history)
-    # 
-    # if simultaneous_pairs:
-    #     print("⚠️ Simultaneous language updates detected!")
-    #     print(create_conflict_pr_message(simultaneous_pairs))
-    #     # Return conflict info instead of processing
-    #     return simultaneous_pairs
+    # Check for simultaneous edits
+    skip_files = check_simultaneous_edits(files)
     
-    # Process files normally
+    if skip_files:
+        print(f"Skipping translation for simultaneously edited files: {skip_files}")
+    
+    # Process files that weren't simultaneously edited
     processed = []
     for file in files:
+        if file in skip_files:
+            print(f"Skipping {file} due to simultaneous edit")
+            continue
+            
         if os.path.exists(file):
             print(f"Processing specific file: {file}")
             if sync_translations(file, commit_history, current_commit_hash):
@@ -228,6 +292,17 @@ def delete_translated_files(deleted_files):
     files = [f.strip() for f in deleted_files.split(',') if f.strip().endswith('.md')]
     
     for file in files:
+        path = Path(file)
+        
+        # Special case for README.md
+        if path.name == "README.md":
+            # Delete README.ja.md if it exists
+            readme_ja = path.parent / "README.ja.md"
+            if readme_ja.exists():
+                print(f"Deleting translated file: {readme_ja}")
+                os.remove(readme_ja)
+            continue
+        
         source_lang = get_file_language(file)
         if not source_lang:
             continue
@@ -271,13 +346,7 @@ def main():
             
     elif args.files:
         print(f"Processing specific files: {args.files}")
-        result = process_specific_files(args.files, commit_history, current_commit_hash)
-        
-        # # Check if result contains simultaneous update conflicts
-        # if result and isinstance(result[0], tuple):
-        #     print("Creating PR for manual review due to simultaneous updates")
-        #     # Exit with special code to signal workflow to create PR
-        #     sys.exit(2)
+        process_specific_files(args.files, commit_history, current_commit_hash)
     else:
         markdown_files = find_markdown_files()
         if not markdown_files:

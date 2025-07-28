@@ -26,9 +26,25 @@ on:
         type: string
         default: ''
         description: 'Current commit hash'
+      is_pr:
+        required: false
+        type: boolean
+        default: false
+        description: 'Whether this is a PR event'
+      pr_number:
+        required: false
+        type: string
+        default: ''
+        description: 'PR number if applicable'
+      target_branch:
+        required: false
+        type: string
+        default: ''
+        description: 'Target branch for PR commits'
 
 permissions:
   contents: write
+  pull-requests: write
 
 jobs:
   translate-markdown:
@@ -64,6 +80,12 @@ jobs:
           git config user.name "github-actions[bot]"
           git config user.email "github-actions[bot]@users.noreply.github.com"
 
+      - name: Switch to target branch for PR
+        if: inputs.is_pr == true
+        working-directory: target-repo
+        run: |
+          git checkout ${{ inputs.target_branch }}
+
       - name: Generate Markdown Translations
         working-directory: target-repo
         env:
@@ -72,6 +94,7 @@ jobs:
           CHANGED_FILES: ${{ inputs.changed_files }}
           DELETED_FILES: ${{ inputs.deleted_files }}
           COMMIT_HASH: ${{ inputs.commit_hash }}
+          IS_PR: ${{ inputs.is_pr }}
         run: |
           echo "Debug: OPENAI_API_KEY is set: $([ -n "$OPENAI_API_KEY" ] && echo "yes" || echo "no")"
           
@@ -87,29 +110,6 @@ jobs:
             OPENAI_API_KEY="${OPENAI_API_KEY}" python ../bilingual-github/src/hooks/post_commit.py --commit-hash "$COMMIT_HASH"
           fi
 
-      # - name: Create PR for Simultaneous Updates
-      #   if: steps.translate.outputs.exit_code == '2'
-      #   uses: peter-evans/create-pull-request@v5
-      #   with:
-      #     token: ${{ secrets.GITHUB_TOKEN }}
-      #     path: target-repo
-      #     title: "Translation Conflict: Manual Review Required"
-      #     body: |
-      #       # Translation Conflict Detected
-      #       
-      #       Both language files were modified together. Please review and merge manually with appropriate tags.
-      #       
-      #       ## Details
-      #       - **Trigger**: Simultaneous updates detected (within 100 seconds)
-      #       - **Action Required**: Manual review to prevent overwrites
-      #       - **Files**: Check the changed files in this PR
-      #       
-      #       ⚠️ **Manual review required to prevent overwrites**
-      #       
-      #       Please ensure that the translations are consistent and merge with appropriate version tags.
-      #     branch: translation-conflict-${{ github.run_number }}
-      #     delete-branch: true
-
       - name: Commit and Push Translations
         working-directory: target-repo
         run: |
@@ -117,6 +117,11 @@ jobs:
           if git diff --cached --quiet; then
             echo "No changes to commit"
           else
-            git commit -m "Update markdown translations [skip-translation]"
-            git push
+            if [ "${{ inputs.is_pr }}" = "true" ]; then
+              git commit -m "Update markdown translations [skip-translation]"
+              git push origin ${{ inputs.target_branch }}
+            else
+              git commit -m "Update markdown translations [skip-translation]"
+              git push
+            fi
           fi
