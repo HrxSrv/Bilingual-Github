@@ -187,34 +187,36 @@ def sync_translations(original_file, commit_history, current_commit_hash):
         print(f"File {original_file} not found, skipping")
         return False
     
-    # First, handle .md file renaming if needed
-    processed_file = rename_ambiguous_md_file(original_file)
-    
-    source_lang = get_file_language(processed_file)
+    source_lang = get_file_language(original_file)
     if not source_lang:
-        print(f"Cannot determine language for {processed_file}, skipping")
+        print(f"Cannot determine language for {original_file}, skipping")
         return False
     
     # Get file hash for change detection
-    current_hash = get_file_hash(processed_file)
-    file_key = str(processed_file)
+    current_hash = get_file_hash(original_file)
+    file_key = str(original_file)
     
-    # Check if file was already processed with this hash
-    if (file_key in commit_history and 
+    # Skip hash checking for PR events - always translate on PR changes
+    is_pr_event = os.environ.get('GITHUB_EVENT_NAME') == 'pull_request'
+    
+    # Check if file was already processed with this hash (only for non-PR events)
+    if (not is_pr_event and 
+        file_key in commit_history and 
         commit_history[file_key].get('hash') == current_hash and
         commit_history[file_key].get('commit') == current_commit_hash):
-        print(f"File {processed_file} already processed with current hash, skipping")
+        print(f"File {original_file} already processed with current hash, skipping")
         return False
     
-    content = read_file(processed_file)
+    content = read_file(original_file)
     target_langs = [lang for lang in TARGET_LANGUAGES if lang != source_lang]
     
     translated = False
     for lang in target_langs:
-        translated_file = get_translated_path(processed_file, lang)
+        translated_file = get_translated_path(original_file, lang)
         translated_file.parent.mkdir(parents=True, exist_ok=True)
         
-        print(f"Translating {processed_file} ({source_lang}) → {translated_file} ({lang})")
+        # Always translate if source file changed
+        print(f"Translating {original_file} ({source_lang}) → {translated_file} ({lang})")
         translated_content = translate_text(content, lang)
         
         if translated_content:
