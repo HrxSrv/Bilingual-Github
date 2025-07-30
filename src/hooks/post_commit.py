@@ -187,14 +187,17 @@ def sync_translations(original_file, commit_history, current_commit_hash):
         print(f"File {original_file} not found, skipping")
         return False
     
-    source_lang = get_file_language(original_file)
+    # First, handle .md file renaming if needed
+    processed_file = rename_ambiguous_md_file(original_file)
+    
+    source_lang = get_file_language(processed_file)
     if not source_lang:
-        print(f"Cannot determine language for {original_file}, skipping")
+        print(f"Cannot determine language for {processed_file}, skipping")
         return False
     
     # Get file hash for change detection
-    current_hash = get_file_hash(original_file)
-    file_key = str(original_file)
+    current_hash = get_file_hash(processed_file)
+    file_key = str(processed_file)
     
     # Skip hash checking for PR events - always translate on PR changes
     is_pr_event = os.environ.get('GITHUB_EVENT_NAME') == 'pull_request'
@@ -204,10 +207,10 @@ def sync_translations(original_file, commit_history, current_commit_hash):
         file_key in commit_history and 
         commit_history[file_key].get('hash') == current_hash and
         commit_history[file_key].get('commit') == current_commit_hash):
-        print(f"File {original_file} already processed with current hash, skipping")
+        print(f"File {processed_file} already processed with current hash, skipping")
         return False
     
-    content = read_file(original_file)
+    content = read_file(processed_file)
     target_langs = [lang for lang in TARGET_LANGUAGES if lang != source_lang]
     
     translated = False
