@@ -251,6 +251,8 @@ def find_markdown_files():
     
     # Recursively find all .md, .en.md, and .ja.md files from project root
     for root, _, files in os.walk('.'):
+        if any(part.startswith('.') for part in Path(root).parts):
+            continue
         for file in files:
             if file.endswith('.md'):  # Includes .en.md and .ja.md files
                 file_path = os.path.join(root, file)
