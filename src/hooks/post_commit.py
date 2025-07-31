@@ -249,29 +249,14 @@ def find_markdown_files():
     """Find all markdown files in project"""
     markdown_files = []
     
-    print("=== DEBUG: Starting file discovery ===")
-    
     # Recursively find all .md, .en.md, and .ja.md files from project root
-    for root, dirs, files in os.walk('.'):
-        print(f"Checking directory: {root}")
-        print(f"Path parts: {Path(root).parts}")
-        
-        # Skip if we're in any hidden directory (.git, .github, .claude, etc.)
-        if any(part.startswith('.') for part in Path(root).parts):
-            print(f"❌ SKIPPING directory {root} (contains hidden directory)")
-            continue
-        
-        print(f"✅ Processing directory: {root}")
-        
+    for root, _, files in os.walk('.'):
         for file in files:
             if file.endswith('.md'):  # Includes .en.md and .ja.md files
                 file_path = os.path.join(root, file)
-                print(f"  📄 Found markdown file: {file_path}")
-                markdown_files.append(file_path)
-    
-    print(f"=== DEBUG: Final file list ({len(markdown_files)} files) ===")
-    for f in markdown_files:
-        print(f"  • {f}")
+                # Skip hidden directories (.git, .github, etc.)
+                if not any(part.startswith('.') for part in Path(file_path).parts):
+                    markdown_files.append(file_path)
     
     return markdown_files
 
