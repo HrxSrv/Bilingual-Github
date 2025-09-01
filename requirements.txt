@@ -2,3 +2,48 @@ PyGithub
 openai
 pyyaml
 python-dotenv
+
+
+# Python dependencies for bilingual-github translation system
+
+# Environment variable management
+python-dotenv>=0.19.0
+
+# HTTP requests for OpenAI API
+requests>=2.25.0
+
+# File handling and path utilities (usually included with Python)
+pathlib2>=2.3.5; python_version < '3.4'
+
+# Text processing and pattern matching
+regex>=2021.4.4
+
+# Date and time handling (usually included with Python)
+python-dateutil>=2.8.2
+
+# Configuration file handling
+configparser>=5.0.2; python_version < '3.8'
+
+# Markdown processing (optional, for advanced markdown handling)
+markdown>=3.3.4
+
+# JSON schema validation (optional, for configuration validation)
+jsonschema>=3.2.0
+
+# Logging enhancements (optional)
+colorlog>=6.6.0
+
+# Development and testing dependencies (optional)
+pytest>=6.2.0
+pytest-cov>=2.12.0
+black>=21.0.0
+flake8>=3.9.0
+
+# GitHub API interaction (if needed for advanced features)
+PyGithub>=1.55
+
+# Retry logic for API calls
+tenacity>=8.0.0
+
+# YAML handling (for potential configuration files)
+PyYAML>=5.4.1

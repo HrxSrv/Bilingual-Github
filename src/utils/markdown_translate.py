@@ -1,15 +1,11 @@
 """
-Translation utilities using OpenAI API
+Translation utilities using OpenAI API (v1.x compatible)
 """
 
 import os
-import openai
+from openai import OpenAI
 import time
 from typing import Optional
-
-
-# Set up OpenAI client
-openai.api_key = os.getenv('OPENAI_API_KEY')
 
 
 def translate_text(text: str, target_language: str, max_retries: int = 3) -> Optional[str]:
@@ -27,9 +23,13 @@ def translate_text(text: str, target_language: str, max_retries: int = 3) -> Opt
     if not text or not text.strip():
         return text
     
-    if not openai.api_key:
+    # Initialize OpenAI client
+    api_key = os.getenv('OPENAI_API_KEY')
+    if not api_key:
         print("Error: OPENAI_API_KEY environment variable not set")
         return None
+    
+    client = OpenAI(api_key=api_key)
     
     # Language mapping
     language_names = {
@@ -50,7 +50,7 @@ def translate_text(text: str, target_language: str, max_retries: int = 3) -> Opt
         try:
             print(f"Translating to {target_lang_name} (attempt {attempt + 1}/{max_retries})")
             
-            response = openai.ChatCompletion.create(
+            response = client.chat.completions.create(
                 model="gpt-4",
                 messages=[
                     {
@@ -77,31 +77,35 @@ def translate_text(text: str, target_language: str, max_retries: int = 3) -> Opt
                 if attempt < max_retries - 1:
                     continue
                     
-        except openai.error.RateLimitError as e:
-            print(f"Rate limit exceeded (attempt {attempt + 1}): {e}")
-            if attempt < max_retries - 1:
-                wait_time = (attempt + 1) * 10  # Exponential backoff
-                print(f"Waiting {wait_time} seconds before retry...")
-                time.sleep(wait_time)
-            continue
-            
-        except openai.error.APIConnectionError as e:
-            print(f"API connection error (attempt {attempt + 1}): {e}")
-            if attempt < max_retries - 1:
-                time.sleep(5)
-            continue
-            
-        except openai.error.APIError as e:
-            print(f"OpenAI API error (attempt {attempt + 1}): {e}")
-            if attempt < max_retries - 1:
-                time.sleep(5)
-            continue
-            
         except Exception as e:
-            print(f"Unexpected error during translation (attempt {attempt + 1}): {e}")
-            if attempt < max_retries - 1:
-                time.sleep(3)
-            continue
+            error_type = type(e).__name__
+            
+            # Handle specific error types
+            if "rate" in str(e).lower() or "RateLimitError" in error_type:
+                print(f"Rate limit exceeded (attempt {attempt + 1}): {e}")
+                if attempt < max_retries - 1:
+                    wait_time = (attempt + 1) * 10  # Exponential backoff
+                    print(f"Waiting {wait_time} seconds before retry...")
+                    time.sleep(wait_time)
+                continue
+                
+            elif "connection" in str(e).lower() or "APIConnectionError" in error_type:
+                print(f"API connection error (attempt {attempt + 1}): {e}")
+                if attempt < max_retries - 1:
+                    time.sleep(5)
+                continue
+                
+            elif "APIError" in error_type or "api" in str(e).lower():
+                print(f"OpenAI API error (attempt {attempt + 1}): {e}")
+                if attempt < max_retries - 1:
+                    time.sleep(5)
+                continue
+                
+            else:
+                print(f"Unexpected error during translation (attempt {attempt + 1}): {e}")
+                if attempt < max_retries - 1:
+                    time.sleep(3)
+                continue
     
     print(f"Translation failed after {max_retries} attempts")
     return None
