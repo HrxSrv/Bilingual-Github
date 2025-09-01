@@ -63,7 +63,7 @@ jobs:
           echo "Deleted Files: ${{ inputs.deleted_files }}"
           echo "Commit Hash: ${{ inputs.commit_hash }}"
           echo "Is Initial Setup: ${{ inputs.is_initial_setup }}"
-          echo "OpenAI API Key Set: $([ -n "${{ secrets.OPENAI_API_KEY }}" ] && echo "yes" || echo "no")"
+          echo "OpenAI API Key Set: $([ -n \"${{ secrets.OPENAI_API_KEY }}\" ] && echo \"yes\" || echo \"no\")"
 
       - name: Checkout Translation Tools Repository
         uses: actions/checkout@v3
@@ -134,7 +134,7 @@ jobs:
           GITHUB_EVENT_NAME: 'pull_request'
         run: |
           echo "=== Starting Translation Process ==="
-          echo "OpenAI API Key is set: $([ -n "$OPENAI_API_KEY" ] && echo "yes" || echo "no")"
+          echo "OpenAI API Key is set: $([ -n \"$OPENAI_API_KEY\" ] && echo \"yes\" || echo \"no\")"
           
           # Create enhanced post_commit.py execution
           if [ "$IS_INITIAL_SETUP" = "true" ]; then
@@ -201,22 +201,22 @@ jobs:
             if [ -n "${{ inputs.changed_files }}" ]; then
               COMMIT_MSG="$COMMIT_MSG
 
-Changed files: ${{ inputs.changed_files }}"
+          Changed files: ${{ inputs.changed_files }}"
             fi
             
             if [ -n "${{ inputs.deleted_files }}" ]; then
               COMMIT_MSG="$COMMIT_MSG
 
-Deleted files: ${{ inputs.deleted_files }}"
+          Deleted files: ${{ inputs.deleted_files }}"
             fi
             
             COMMIT_MSG="$COMMIT_MSG
 
-- Auto-translated markdown files
-- Applied formatting fixes
-- Processed for PR #${{ inputs.pr_number }}
+          - Auto-translated markdown files
+          - Applied formatting fixes
+          - Processed for PR #${{ inputs.pr_number }}
 
-[skip-translation]"
+          [skip-translation]"
             
             git commit -m "$COMMIT_MSG"
             
