@@ -6,11 +6,6 @@ on:
       OPENAI_API_KEY:
         required: true
     inputs:
-      is_initial_setup:
-        required: false
-        type: boolean
-        default: false
-        description: 'Whether this is the initial setup run'
       changed_files:
         required: false
         type: string
@@ -21,26 +16,32 @@ on:
         type: string
         default: ''
         description: 'Comma-separated list of deleted files'
+      pr_number:
+        required: true
+        type: string
+        description: 'PR number'
+      target_branch:
+        required: true
+        type: string
+        description: 'Target branch for PR commits'
+      base_branch:
+        required: true
+        type: string
+        description: 'Base branch for PR'
+      client_repo:
+        required: true
+        type: string
+        description: 'Client repository (owner/repo format)'
       commit_hash:
         required: false
         type: string
         default: ''
         description: 'Current commit hash'
-      is_pr:
+      is_initial_setup:
         required: false
         type: boolean
         default: false
-        description: 'Whether this is a PR event'
-      pr_number:
-        required: false
-        type: string
-        default: ''
-        description: 'PR number if applicable'
-      target_branch:
-        required: false
-        type: string
-        default: ''
-        description: 'Target branch for PR commits'
+        description: 'Whether this is the initial setup run'
 
 permissions:
   contents: write
@@ -51,28 +52,48 @@ jobs:
     runs-on: ubuntu-latest
 
     steps:
+      - name: Debug Workflow Inputs
+        run: |
+          echo "=== Workflow Debug Information ==="
+          echo "Client Repository: ${{ inputs.client_repo }}"
+          echo "PR Number: ${{ inputs.pr_number }}"
+          echo "Target Branch: ${{ inputs.target_branch }}"
+          echo "Base Branch: ${{ inputs.base_branch }}"
+          echo "Changed Files: ${{ inputs.changed_files }}"
+          echo "Deleted Files: ${{ inputs.deleted_files }}"
+          echo "Commit Hash: ${{ inputs.commit_hash }}"
+          echo "Is Initial Setup: ${{ inputs.is_initial_setup }}"
+          echo "OpenAI API Key Set: $([ -n "${{ secrets.OPENAI_API_KEY }}" ] && echo "yes" || echo "no")"
+
       - name: Checkout Translation Tools Repository
         uses: actions/checkout@v3
         with:
-          repository: hrxsrv/bilingual-github
+          repository: rimoapp/bilingual-github
           path: bilingual-github
+          token: ${{ secrets.GITHUB_TOKEN }}
 
       - name: Checkout Target Repository
         uses: actions/checkout@v3
         with:
+          repository: ${{ inputs.client_repo }}
           path: target-repo
           fetch-depth: 0
+          token: ${{ secrets.GITHUB_TOKEN }}
 
       - name: Set Up Python
         uses: actions/setup-python@v4
         with:
-          python-version: '3.8'
+          python-version: '3.10'
 
       - name: Install Translation Dependencies
         working-directory: bilingual-github
         run: |
           python -m pip install --upgrade pip
           pip install -r requirements.txt
+
+      - name: Install Formatting Dependencies
+        run: |
+          pip install pre-commit
 
       - name: Configure Git User
         working-directory: target-repo
@@ -81,10 +102,24 @@ jobs:
           git config user.email "github-actions[bot]@users.noreply.github.com"
 
       - name: Switch to target branch for PR
-        if: inputs.is_pr == true
         working-directory: target-repo
         run: |
+          echo "Switching to branch: ${{ inputs.target_branch }}"
           git checkout ${{ inputs.target_branch }}
+          git pull origin ${{ inputs.target_branch }}
+
+      - name: Load Translation Configuration
+        id: config
+        working-directory: target-repo
+        run: |
+          # Check if .translation_ignore exists
+          if [ -f ".translation_ignore" ]; then
+            echo "Found .translation_ignore file"
+            echo "ignore_file_exists=true" >> $GITHUB_OUTPUT
+          else
+            echo "No .translation_ignore file found, using defaults"
+            echo "ignore_file_exists=false" >> $GITHUB_OUTPUT
+          fi
 
       - name: Generate Markdown Translations
         working-directory: target-repo
@@ -94,34 +129,134 @@ jobs:
           CHANGED_FILES: ${{ inputs.changed_files }}
           DELETED_FILES: ${{ inputs.deleted_files }}
           COMMIT_HASH: ${{ inputs.commit_hash }}
-          IS_PR: ${{ inputs.is_pr }}
+          PR_NUMBER: ${{ inputs.pr_number }}
+          CLIENT_REPO: ${{ inputs.client_repo }}
+          GITHUB_EVENT_NAME: 'pull_request'
         run: |
-          echo "Debug: OPENAI_API_KEY is set: $([ -n "$OPENAI_API_KEY" ] && echo "yes" || echo "no")"
+          echo "=== Starting Translation Process ==="
+          echo "OpenAI API Key is set: $([ -n "$OPENAI_API_KEY" ] && echo "yes" || echo "no")"
           
+          # Create enhanced post_commit.py execution
           if [ "$IS_INITIAL_SETUP" = "true" ]; then
             echo "Performing initial setup translation"
-            OPENAI_API_KEY="${OPENAI_API_KEY}" python ../bilingual-github/src/hooks/post_commit.py --initial-setup --commit-hash "$COMMIT_HASH"
+            python ../bilingual-github/src/hooks/post_commit_enhanced.py \
+              --initial-setup \
+              --commit-hash "$COMMIT_HASH" \
+              --client-repo "$CLIENT_REPO" \
+              --pr-number "$PR_NUMBER"
           elif [ -n "$CHANGED_FILES" ] || [ -n "$DELETED_FILES" ]; then
-            echo "Translating changed files: $CHANGED_FILES"
-            echo "Deleting translated files for: $DELETED_FILES"
-            OPENAI_API_KEY="${OPENAI_API_KEY}" python ../bilingual-github/src/hooks/post_commit.py --files "$CHANGED_FILES" --deleted-files "$DELETED_FILES" --commit-hash "$COMMIT_HASH"
+            echo "Translating specific files"
+            echo "Changed files: $CHANGED_FILES"
+            echo "Deleted files: $DELETED_FILES"
+            python ../bilingual-github/src/hooks/post_commit_enhanced.py \
+              --files "$CHANGED_FILES" \
+              --deleted-files "$DELETED_FILES" \
+              --commit-hash "$COMMIT_HASH" \
+              --client-repo "$CLIENT_REPO" \
+              --pr-number "$PR_NUMBER"
           else
             echo "Translating all markdown files"
-            OPENAI_API_KEY="${OPENAI_API_KEY}" python ../bilingual-github/src/hooks/post_commit.py --commit-hash "$COMMIT_HASH"
+            python ../bilingual-github/src/hooks/post_commit_enhanced.py \
+              --commit-hash "$COMMIT_HASH" \
+              --client-repo "$CLIENT_REPO" \
+              --pr-number "$PR_NUMBER"
+          fi
+
+      - name: Apply Final Formatting
+        working-directory: target-repo
+        run: |
+          echo "=== Applying Final Formatting ==="
+          
+          # Get all markdown files that exist
+          MARKDOWN_FILES=$(find . -name "*.md" -type f | grep -v -E "^\./(\.git|\.github|node_modules)" | tr '\n' ' ')
+          
+          if [[ -n "$MARKDOWN_FILES" ]]; then
+            echo "Applying formatting to: $MARKDOWN_FILES"
+            
+            # Apply formatting fixes using Python script
+            python ../bilingual-github/src/utils/format_files.py $MARKDOWN_FILES
+            
+            echo "Formatting completed"
+          else
+            echo "No markdown files found for formatting"
           fi
 
       - name: Commit and Push Translations
         working-directory: target-repo
         run: |
+          echo "=== Committing Translation Results ==="
+          
+          # Check for any changes
           git add -A
+          
           if git diff --cached --quiet; then
-            echo "No changes to commit"
+            echo "No translation changes to commit"
+            echo "translation_committed=false" >> $GITHUB_ENV
           else
-            if [ "${{ inputs.is_pr }}" = "true" ]; then
-              git commit -m "Update markdown translations [skip-translation]"
-              git push origin ${{ inputs.target_branch }}
-            else
-              git commit -m "Update markdown translations [skip-translation]"
-              git push
+            echo "Committing translation changes"
+            
+            # Create a comprehensive commit message
+            COMMIT_MSG="🌐 Update markdown translations"
+            
+            if [ -n "${{ inputs.changed_files }}" ]; then
+              COMMIT_MSG="$COMMIT_MSG
+
+Changed files: ${{ inputs.changed_files }}"
             fi
+            
+            if [ -n "${{ inputs.deleted_files }}" ]; then
+              COMMIT_MSG="$COMMIT_MSG
+
+Deleted files: ${{ inputs.deleted_files }}"
+            fi
+            
+            COMMIT_MSG="$COMMIT_MSG
+
+- Auto-translated markdown files
+- Applied formatting fixes
+- Processed for PR #${{ inputs.pr_number }}
+
+[skip-translation]"
+            
+            git commit -m "$COMMIT_MSG"
+            
+            # Push to the target branch
+            echo "Pushing to branch: ${{ inputs.target_branch }}"
+            git push origin ${{ inputs.target_branch }}
+            
+            echo "translation_committed=true" >> $GITHUB_ENV
           fi
+
+      - name: Create Translation Summary
+        working-directory: target-repo
+        run: |
+          echo "=== Translation Summary ==="
+          
+          # Count translated files
+          TRANSLATED_COUNT=0
+          if [ -n "${{ inputs.changed_files }}" ]; then
+            TRANSLATED_COUNT=$(echo "${{ inputs.changed_files }}" | tr ',' '\n' | wc -l)
+          fi
+          
+          DELETED_COUNT=0
+          if [ -n "${{ inputs.deleted_files }}" ]; then
+            DELETED_COUNT=$(echo "${{ inputs.deleted_files }}" | tr ',' '\n' | wc -l)
+          fi
+          
+          echo "Files translated: $TRANSLATED_COUNT"
+          echo "Translation files deleted: $DELETED_COUNT"
+          echo "Commit created: ${{ env.translation_committed }}"
+          
+          # Create summary file for potential use by calling workflow
+          cat > /tmp/translation_summary.json << EOF
+          {
+            "files_translated": $TRANSLATED_COUNT,
+            "files_deleted": $DELETED_COUNT,
+            "commit_created": "${{ env.translation_committed }}",
+            "client_repo": "${{ inputs.client_repo }}",
+            "pr_number": "${{ inputs.pr_number }}",
+            "target_branch": "${{ inputs.target_branch }}"
+          }
+          EOF
+          
+          echo "Translation process completed successfully"
