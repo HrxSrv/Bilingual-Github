@@ -372,8 +372,15 @@ class TranslationManager:
 
     def calculate_change_percentage(self, old_content, new_content):
         """Calculate percentage of lines changed between two versions"""
+        if not old_content and not new_content:
+            return 0  # Both empty
+        
         if not old_content or not new_content:
             return 100  # Treat as complete change if either is missing
+        
+        # If contents are identical, no change
+        if old_content.strip() == new_content.strip():
+            return 0
         
         old_lines = old_content.splitlines()
         new_lines = new_content.splitlines()
@@ -389,7 +396,10 @@ class TranslationManager:
         if total_lines == 0:
             return 0
         
-        return (changed_lines / total_lines) * 100
+        percentage = (changed_lines / total_lines) * 100
+        print(f"Debug: old_lines={len(old_lines)}, new_lines={len(new_lines)}, changed_lines={changed_lines}, percentage={percentage:.1f}%")
+        
+        return percentage
 
     def get_previous_version(self, file_path):
         """Get previous version of file from git history"""
@@ -558,6 +568,11 @@ Updated {target_lang_name} translation:"""
         old_source = self.get_previous_version(processed_file)
         if not old_source:
             old_source = self.get_previous_from_history(processed_file, commit_history)
+        
+        # Skip files that haven't actually changed (unless it's a PR event)
+        if old_source and old_source.strip() == new_source.strip():
+            print(f"File {processed_file} has no actual changes, skipping translation")
+            return False
             
         target_langs = [lang for lang in TARGET_LANGUAGES if lang != source_lang]
         
@@ -627,8 +642,8 @@ Updated {target_lang_name} translation:"""
         return translated
 
     def find_markdown_files(self):
-        """Find all markdown files in project, respecting ignore patterns"""
-        markdown_files = []
+        """Find all markdown files in project, respecting ignore patterns and avoiding translation loops"""
+        all_markdown_files = []
         
         # Recursively find all .md files from project root
         for root, dirs, files in os.walk(self.repo_root):
@@ -639,9 +654,39 @@ Updated {target_lang_name} translation:"""
                 if file.endswith('.md'):
                     file_path = os.path.relpath(os.path.join(root, file), self.repo_root)
                     if not self.config.should_ignore_file(file_path):
-                        markdown_files.append(file_path)
+                        all_markdown_files.append(file_path)
         
-        return markdown_files
+        # Filter out translation files when their source exists to prevent loops
+        filtered_files = []
+        file_set = set(all_markdown_files)
+        
+        for file_path in all_markdown_files:
+            path = Path(file_path)
+            
+            # Skip .ja.md files if corresponding .en.md exists
+            if path.name.endswith('.ja.md'):
+                stem = path.name[:-6]  # Remove .ja.md
+                en_counterpart = str(path.parent / f"{stem}.en.md")
+                
+                if en_counterpart in file_set:
+                    print(f"Skipping {file_path} - corresponding English source {en_counterpart} exists")
+                    continue
+            
+            # Skip README.ja.md if README.en.md or README.md exists
+            elif path.name.upper().endswith('.JA.MD') and 'README' in path.name.upper():
+                base_dir = path.parent
+                base_name = path.name[:-6]  # Remove .ja.md
+                
+                en_counterpart = str(base_dir / f"{base_name}.en.md")
+                md_counterpart = str(base_dir / f"{base_name[:-3]}.md")  # Remove .ja, add .md
+                
+                if en_counterpart in file_set or md_counterpart in file_set:
+                    print(f"Skipping {file_path} - corresponding source file exists")
+                    continue
+            
+            filtered_files.append(file_path)
+        
+        return filtered_files
 
     def process_specific_files(self, file_list, commit_history, current_commit_hash):
         """Process specific files with simultaneous edit detection"""

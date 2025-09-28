@@ -120,6 +120,19 @@ jobs:
             echo "No .translation_ignore file found, using defaults"
             echo "ignore_file_exists=false" >> $GITHUB_OUTPUT
           fi
+          
+          # Check if .translation_config.json exists
+          if [ -f ".translation_config.json" ]; then
+            echo "Found .translation_config.json file"
+            THRESHOLD=$(cat .translation_config.json | jq -r '.incremental_threshold // 20')
+            echo "Incremental threshold: ${THRESHOLD}%"
+            echo "config_file_exists=true" >> $GITHUB_OUTPUT
+            echo "incremental_threshold=$THRESHOLD" >> $GITHUB_OUTPUT
+          else
+            echo "No .translation_config.json file found, using default threshold (20%)"
+            echo "config_file_exists=false" >> $GITHUB_OUTPUT
+            echo "incremental_threshold=20" >> $GITHUB_OUTPUT
+          fi
 
       - name: Generate Markdown Translations
         working-directory: target-repo
@@ -133,8 +146,13 @@ jobs:
           CLIENT_REPO: ${{ inputs.client_repo }}
           GITHUB_EVENT_NAME: 'pull_request'
         run: |
-          echo "=== Starting Translation Process ==="
+          echo "=== Starting Hybrid Translation Process ==="
           echo "OpenAI API Key is set: $([ -n \"$OPENAI_API_KEY\" ] && echo \"yes\" || echo \"no\")"
+          echo "Incremental threshold: ${{ steps.config.outputs.incremental_threshold }}%"
+          echo "Config file exists: ${{ steps.config.outputs.config_file_exists }}"
+          echo "DEBUG: CHANGED_FILES='$CHANGED_FILES'"
+          echo "DEBUG: DELETED_FILES='$DELETED_FILES'"
+          echo "DEBUG: IS_INITIAL_SETUP='$IS_INITIAL_SETUP'"
           
           # Create enhanced post_commit.py execution
           if [ "$IS_INITIAL_SETUP" = "true" ]; then
