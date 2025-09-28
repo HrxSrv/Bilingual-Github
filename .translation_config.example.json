@@ -1,0 +1,16 @@
+{
+  "incremental_threshold": 20,
+  "enable_incremental": true,
+  "description": "Configuration for hybrid translation system",
+  "settings": {
+    "incremental_threshold": {
+      "description": "Percentage threshold for switching from incremental to full translation",
+      "default": 20,
+      "range": "0-100"
+    },
+    "enable_incremental": {
+      "description": "Enable incremental translation feature",
+      "default": true
+    }
+  }
+}

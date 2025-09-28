@@ -7,6 +7,7 @@ import os
 import sys
 import argparse
 import fnmatch
+import subprocess
 from pathlib import Path
 from difflib import unified_diff
 import re
@@ -43,6 +44,7 @@ class TranslationConfig:
     def __init__(self, repo_root='.'):
         self.repo_root = Path(repo_root)
         self.ignore_patterns = self._load_ignore_patterns()
+        self.incremental_threshold = self._load_threshold()
     
     def _load_ignore_patterns(self):
         """Load .translation_ignore patterns from client repo"""
@@ -90,6 +92,22 @@ class TranslationConfig:
                 return True
         
         return False
+    
+    def _load_threshold(self):
+        """Load translation threshold from config"""
+        config_file = self.repo_root / '.translation_config.json'
+        if config_file.exists():
+            try:
+                with open(config_file, 'r') as f:
+                    config = json.load(f)
+                    threshold = config.get('incremental_threshold', 20)
+                    print(f"Loaded incremental threshold: {threshold}%")
+                    return threshold
+            except Exception as e:
+                print(f"Error loading config: {e}")
+        
+        print("Using default incremental threshold: 20%")
+        return 20  # Default 20%
 
 class MarkdownFormatter:
     """Handle markdown file formatting"""
@@ -181,6 +199,7 @@ class TranslationManager:
         self.detector = LanguageDetector()
         self.client_repo = client_repo
         self.pr_number = pr_number
+        self.incremental_threshold = self.config.incremental_threshold
         
     def get_file_language(self, file_path):
         """Determine language based on file extension and content"""
@@ -351,8 +370,153 @@ class TranslationManager:
         
         return skip_files
 
+    def calculate_change_percentage(self, old_content, new_content):
+        """Calculate percentage of lines changed between two versions"""
+        if not old_content or not new_content:
+            return 100  # Treat as complete change if either is missing
+        
+        old_lines = old_content.splitlines()
+        new_lines = new_content.splitlines()
+        
+        # Use difflib to get actual changes
+        diff = list(unified_diff(old_lines, new_lines, lineterm=''))
+        
+        # Count changed lines (lines starting with + or -)
+        changed_lines = len([line for line in diff if line.startswith(('+', '-')) and not line.startswith(('+++', '---'))])
+        
+        # Calculate percentage based on larger file
+        total_lines = max(len(old_lines), len(new_lines))
+        if total_lines == 0:
+            return 0
+        
+        return (changed_lines / total_lines) * 100
+
+    def get_previous_version(self, file_path):
+        """Get previous version of file from git history"""
+        try:
+            # Try to get file from previous commit
+            result = subprocess.run(
+                ['git', 'show', f'HEAD~1:{file_path}'],
+                capture_output=True, text=True, cwd=self.repo_root
+            )
+            if result.returncode == 0:
+                return result.stdout
+        except Exception as e:
+            print(f"Git lookup failed for {file_path}: {e}")
+        
+        return None
+
+    def get_previous_from_history(self, file_path, commit_history):
+        """Get previous version from stored commit history"""
+        file_key = str(file_path)
+        if file_key in commit_history:
+            return commit_history[file_key].get('content')
+        return None
+
+    def get_current_translation(self, translated_file_path):
+        """Get existing translation file content"""
+        if os.path.exists(translated_file_path):
+            try:
+                with open(translated_file_path, 'r', encoding='utf-8') as f:
+                    return f.read()
+            except Exception as e:
+                print(f"Error reading translation file {translated_file_path}: {e}")
+        
+        return None
+
+    def incremental_translate(self, old_source, new_source, current_target, target_lang):
+        """Perform incremental translation using LLM with 3-file context"""
+        from utils.markdown_translate import OpenAI
+        import os
+        
+        api_key = os.getenv('OPENAI_API_KEY')
+        if not api_key:
+            print("Error: OPENAI_API_KEY environment variable not set")
+            return None
+        
+        client = OpenAI(api_key=api_key)
+        
+        language_names = {
+            'en': 'English',
+            'ja': 'Japanese'
+        }
+        
+        target_lang_name = language_names.get(target_lang, target_lang)
+        
+        prompt = f"""You are updating a {target_lang_name} translation. Analyze the changes between OLD_SOURCE and NEW_SOURCE, then update CURRENT_TARGET with minimal changes.
+
+CRITICAL RULES:
+1. ONLY modify sections that changed between OLD_SOURCE and NEW_SOURCE
+2. Preserve unchanged translations EXACTLY as they are in CURRENT_TARGET
+3. Maintain consistent terminology and style from CURRENT_TARGET
+4. Preserve ALL markdown formatting (headers, lists, code blocks, tables, links)
+5. Return ONLY the complete updated target file content, no explanations
+
+OLD_SOURCE:
+{old_source}
+
+NEW_SOURCE:
+{new_source}
+
+CURRENT_TARGET:
+{current_target}
+
+Updated {target_lang_name} translation:"""
+
+        try:
+            print(f"Performing incremental translation to {target_lang_name}")
+            
+            response = client.chat.completions.create(
+                model="gpt-4",
+                messages=[
+                    {
+                        "role": "system",
+                        "content": f"You are a professional translator specializing in incremental updates. You update {target_lang_name} translations by making minimal changes based on source file differences."
+                    },
+                    {
+                        "role": "user",
+                        "content": prompt
+                    }
+                ],
+                temperature=0.1,
+            )
+            
+            translated_content = response.choices[0].message.content.strip()
+            
+            if translated_content and len(translated_content) > 10:
+                return translated_content
+            else:
+                print("Incremental translation returned insufficient content")
+                return None
+                
+        except Exception as e:
+            print(f"Error in incremental translation: {e}")
+            return None
+
+    def smart_translate(self, old_source, new_source, current_target, target_lang):
+        """Hybrid translation with configurable threshold"""
+        
+        change_percentage = self.calculate_change_percentage(old_source, new_source)
+        print(f"Change percentage: {change_percentage:.1f}%")
+        
+        if change_percentage >= self.incremental_threshold:
+            # Large changes - use full translation
+            print(f"Large changes detected ({change_percentage:.1f}% >= {self.incremental_threshold}%), using full translation")
+            return translate_text(new_source, target_lang)
+        else:
+            # Small changes - use incremental translation
+            print(f"Small changes detected ({change_percentage:.1f}% < {self.incremental_threshold}%), using incremental translation")
+            result = self.incremental_translate(old_source, new_source, current_target, target_lang)
+            
+            # Fallback to full translation if incremental fails
+            if not result:
+                print("Incremental translation failed, falling back to full translation")
+                return translate_text(new_source, target_lang)
+            
+            return result
+
     def sync_translations(self, original_file, commit_history, current_commit_hash):
-        """Sync translations with commit tracking and integrated formatting"""
+        """Sync translations with hybrid translation strategy"""
         if not os.path.exists(original_file):
             print(f"File {original_file} not found, skipping")
             return False
@@ -384,10 +548,16 @@ class TranslationManager:
             print(f"File {processed_file} already processed with current hash, skipping")
             return False
         
-        content = self._read_file(processed_file)
-        if not content.strip():
+        # Current source content
+        new_source = self._read_file(processed_file)
+        if not new_source.strip():
             print(f"File {processed_file} is empty, skipping")
             return False
+        
+        # Get previous version for hybrid translation
+        old_source = self.get_previous_version(processed_file)
+        if not old_source:
+            old_source = self.get_previous_from_history(processed_file, commit_history)
             
         target_langs = [lang for lang in TARGET_LANGUAGES if lang != source_lang]
         
@@ -396,9 +566,26 @@ class TranslationManager:
             translated_file = self.get_translated_path(processed_file, lang)
             translated_file.parent.mkdir(parents=True, exist_ok=True)
             
+            # Get current translation if it exists
+            current_target = self.get_current_translation(str(translated_file))
+            
             print(f"Translating {processed_file} ({source_lang}) → {translated_file} ({lang})")
+            
             try:
-                translated_content = translate_text(content, lang)
+                # Decide translation strategy
+                if old_source and current_target:
+                    # We have all 3 files - use hybrid approach
+                    print(f"Using hybrid translation strategy")
+                    translated_content = self.smart_translate(
+                        old_source, new_source, current_target, lang
+                    )
+                else:
+                    # Missing context - fall back to full translation
+                    if not old_source:
+                        print("No previous version found, using full translation")
+                    if not current_target:
+                        print("No existing translation found, using full translation")
+                    translated_content = translate_text(new_source, lang)
                 
                 if translated_content and translated_content.strip():
                     # Write translated content
@@ -427,13 +614,14 @@ class TranslationManager:
                 print(f"Error translating {processed_file} to {lang}: {e}")
                 continue
         
-        # Update commit history for source file
+        # Update commit history for source file (store content for next comparison)
         if translated:
             commit_history[file_key] = {
                 'hash': current_hash,
                 'commit': current_commit_hash,
                 'timestamp': datetime.now().isoformat(),
-                'language': source_lang
+                'language': source_lang,
+                'content': new_source  # Store content for next hybrid translation
             }
         
         return translated
