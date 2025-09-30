@@ -38,204 +38,178 @@ DEFAULT_IGNORE_PATTERNS = [
     '.github/**'
 ]
 
-class TranslationConfig:
-    """Handle translation configuration and ignore patterns"""
+def load_ignore_patterns(repo_root='.'):
+    """Load .translation_ignore patterns from client repo"""
+    ignore_file = Path(repo_root) / TRANSLATION_IGNORE_FILE
+    patterns = []
     
-    def __init__(self, repo_root='.'):
-        self.repo_root = Path(repo_root)
-        self.ignore_patterns = self._load_ignore_patterns()
-        self.incremental_threshold = self._load_threshold()
-    
-    def _load_ignore_patterns(self):
-        """Load .translation_ignore patterns from client repo"""
-        ignore_file = self.repo_root / TRANSLATION_IGNORE_FILE
-        patterns = []
-        
-        if ignore_file.exists():
-            print(f"Loading ignore patterns from: {ignore_file}")
-            try:
-                with open(ignore_file, 'r', encoding='utf-8') as f:
-                    for line in f:
-                        line = line.strip()
-                        if line and not line.startswith('#'):
-                            patterns.append(line)
-                print(f"Loaded {len(patterns)} ignore patterns")
-            except Exception as e:
-                print(f"Error reading {ignore_file}: {e}")
-                patterns = DEFAULT_IGNORE_PATTERNS.copy()
-        else:
-            print("No .translation_ignore file found, using default patterns")
+    if ignore_file.exists():
+        print(f"Loading ignore patterns from: {ignore_file}")
+        try:
+            with open(ignore_file, 'r', encoding='utf-8') as f:
+                for line in f:
+                    line = line.strip()
+                    if line and not line.startswith('#'):
+                        patterns.append(line)
+            print(f"Loaded {len(patterns)} ignore patterns")
+        except Exception as e:
+            print(f"Error reading {ignore_file}: {e}")
             patterns = DEFAULT_IGNORE_PATTERNS.copy()
-        
-        return patterns
+    else:
+        print("No .translation_ignore file found, using default patterns")
+        patterns = DEFAULT_IGNORE_PATTERNS.copy()
     
-    def should_ignore_file(self, file_path):
-        """Check if file should be ignored based on patterns"""
-        file_path_str = str(file_path)
+    return patterns
+
+def should_ignore_file(file_path, ignore_patterns):
+    """Check if file should be ignored based on patterns"""
+    file_path_str = str(file_path)
+    
+    for pattern in ignore_patterns:
+        # Direct match
+        if fnmatch.fnmatch(file_path_str, pattern):
+            print(f"Ignoring {file_path_str} (matches pattern: {pattern})")
+            return True
         
-        for pattern in self.ignore_patterns:
-            # Direct match
-            if fnmatch.fnmatch(file_path_str, pattern):
-                print(f"Ignoring {file_path_str} (matches pattern: {pattern})")
-                return True
-            
-            # Handle directory patterns ending with /**
-            if pattern.endswith('/**'):
-                dir_pattern = pattern[:-3]  # Remove /**
-                if file_path_str.startswith(dir_pattern + '/') or file_path_str == dir_pattern:
-                    print(f"Ignoring {file_path_str} (in directory: {dir_pattern})")
-                    return True
-            
-            # Handle patterns with path separators
-            if '/' in pattern and fnmatch.fnmatch(file_path_str, pattern):
-                print(f"Ignoring {file_path_str} (matches path pattern: {pattern})")
+        # Handle directory patterns ending with /**
+        if pattern.endswith('/**'):
+            dir_pattern = pattern[:-3]  # Remove /**
+            if file_path_str.startswith(dir_pattern + '/') or file_path_str == dir_pattern:
+                print(f"Ignoring {file_path_str} (in directory: {dir_pattern})")
                 return True
         
+        # Handle patterns with path separators
+        if '/' in pattern and fnmatch.fnmatch(file_path_str, pattern):
+            print(f"Ignoring {file_path_str} (matches path pattern: {pattern})")
+            return True
+    
+    return False
+
+def load_threshold(repo_root='.'):
+    """Load translation threshold from config"""
+    config_file = Path(repo_root) / '.translation_config.json'
+    if config_file.exists():
+        try:
+            with open(config_file, 'r') as f:
+                config = json.load(f)
+                threshold = config.get('incremental_threshold', 20)
+                print(f"Loaded incremental threshold: {threshold}%")
+                return threshold
+        except Exception as e:
+            print(f"Error loading config: {e}")
+    
+    print("Using default incremental threshold: 20%")
+    return 20  # Default 20%
+
+def apply_formatting_fixes(file_path):
+    """Apply formatting fixes to a markdown file"""
+    if not os.path.exists(file_path):
         return False
     
-    def _load_threshold(self):
-        """Load translation threshold from config"""
-        config_file = self.repo_root / '.translation_config.json'
-        if config_file.exists():
-            try:
-                with open(config_file, 'r') as f:
-                    config = json.load(f)
-                    threshold = config.get('incremental_threshold', 20)
-                    print(f"Loaded incremental threshold: {threshold}%")
-                    return threshold
-            except Exception as e:
-                print(f"Error loading config: {e}")
+    try:
+        # Read file
+        with open(file_path, 'r', encoding='utf-8') as f:
+            content = f.read()
         
-        print("Using default incremental threshold: 20%")
-        return 20  # Default 20%
-
-class MarkdownFormatter:
-    """Handle markdown file formatting"""
-    
-    @staticmethod
-    def apply_formatting_fixes(file_path):
-        """Apply formatting fixes to a markdown file"""
-        if not os.path.exists(file_path):
-            return False
+        original_content = content
         
-        try:
-            # Read file
-            with open(file_path, 'r', encoding='utf-8') as f:
-                content = f.read()
-            
-            original_content = content
-            
-            # Fix 1: Remove trailing whitespace from lines
-            lines = content.splitlines()
-            fixed_lines = [line.rstrip() for line in lines]
-            content = '\n'.join(fixed_lines)
-            
-            # Fix 2: Ensure single newline at end of file
-            if content and not content.endswith('\n'):
-                content += '\n'
-            elif content.endswith('\n\n'):
-                # Remove extra newlines, keep only one
-                content = content.rstrip('\n') + '\n'
-            
-            # Fix 3: Remove excessive blank lines (more than 2 consecutive)
-            content = re.sub(r'\n{3,}', '\n\n', content)
-            
-            # Write back if changed
-            if content != original_content:
-                with open(file_path, 'w', encoding='utf-8') as f:
-                    f.write(content)
-                print(f"Applied formatting fixes to: {file_path}")
-                return True
-            
-            return False
-            
-        except Exception as e:
-            print(f"Error formatting {file_path}: {e}")
-            return False
+        # Fix 1: Remove trailing whitespace from lines
+        lines = content.splitlines()
+        fixed_lines = [line.rstrip() for line in lines]
+        content = '\n'.join(fixed_lines)
+        
+        # Fix 2: Ensure single newline at end of file
+        if content and not content.endswith('\n'):
+            content += '\n'
+        elif content.endswith('\n\n'):
+            # Remove extra newlines, keep only one
+            content = content.rstrip('\n') + '\n'
+        
+        # Fix 3: Remove excessive blank lines (more than 2 consecutive)
+        content = re.sub(r'\n{3,}', '\n\n', content)
+        
+        # Write back if changed
+        if content != original_content:
+            with open(file_path, 'w', encoding='utf-8') as f:
+                f.write(content)
+            print(f"Applied formatting fixes to: {file_path}")
+            return True
+        
+        return False
+        
+    except Exception as e:
+        print(f"Error formatting {file_path}: {e}")
+        return False
 
-class LanguageDetector:
+def detect_language(content):
     """Enhanced language detection for markdown files"""
+    if not content or not content.strip():
+        return "en"  # Default to English for empty files
     
-    @staticmethod
-    def detect_language(content):
-        """Detect language based on character patterns and content"""
-        if not content or not content.strip():
-            return "en"  # Default to English for empty files
-        
-        # Remove code blocks and inline code to avoid false positives
-        content_no_code = re.sub(r'```[\s\S]*?```', '', content)
-        content_no_code = re.sub(r'`[^`]*`', '', content_no_code)
-        
-        # Count Japanese characters (Hiragana, Katakana, Kanji)
-        japanese_chars = len(re.findall(r'[\u3040-\u309F\u30A0-\u30FF\u4E00-\u9FAF]', content_no_code))
-        
-        # Count total non-whitespace characters
-        total_chars = len(re.sub(r'\s', '', content_no_code))
-        
-        if total_chars == 0:
-            return "en"
-        
-        japanese_ratio = japanese_chars / total_chars
-        
-        # More sophisticated detection
-        if japanese_ratio > 0.15:  # Higher threshold for more accuracy
-            return "ja"
-        elif japanese_ratio > 0.05:
-            # Check for Japanese-specific patterns
-            if re.search(r'[。、]', content_no_code):  # Japanese punctuation
-                return "ja"
-            if re.search(r'です|ます|である|だ。', content_no_code):  # Japanese sentence endings
-                return "ja"
-        
+    # Remove code blocks and inline code to avoid false positives
+    content_no_code = re.sub(r'```[\s\S]*?```', '', content)
+    content_no_code = re.sub(r'`[^`]*`', '', content_no_code)
+    
+    # Count Japanese characters (Hiragana, Katakana, Kanji)
+    japanese_chars = len(re.findall(r'[\u3040-\u309F\u30A0-\u30FF\u4E00-\u9FAF]', content_no_code))
+    
+    # Count total non-whitespace characters
+    total_chars = len(re.sub(r'\s', '', content_no_code))
+    
+    if total_chars == 0:
         return "en"
-
-class TranslationManager:
-    """Main translation management class"""
     
-    def __init__(self, repo_root='.', client_repo=None, pr_number=None):
-        self.repo_root = Path(repo_root)
-        self.config = TranslationConfig(repo_root)
-        self.formatter = MarkdownFormatter()
-        self.detector = LanguageDetector()
-        self.client_repo = client_repo
-        self.pr_number = pr_number
-        self.incremental_threshold = self.config.incremental_threshold
-        
-    def get_file_language(self, file_path):
-        """Determine language based on file extension and content"""
-        path = Path(file_path)
-        
-        # Special case for README.md - detect language from content
-        if path.name.upper() == "README.MD":
-            if path.exists():
-                content = self._read_file(file_path)
-                return self.detector.detect_language(content)
-            return "en"  # Default README to English
-        
-        # Check for explicit language extensions
-        if path.name.endswith('.ja.md'):
+    japanese_ratio = japanese_chars / total_chars
+    
+    # More sophisticated detection
+    if japanese_ratio > 0.15:  # Higher threshold for more accuracy
+        return "ja"
+    elif japanese_ratio > 0.05:
+        # Check for Japanese-specific patterns
+        if re.search(r'[。、]', content_no_code):  # Japanese punctuation
             return "ja"
-        elif path.name.endswith('.en.md'):
-            return "en"
-        elif path.name.endswith('.md'):
-            # For other .md files, detect language
-            if path.exists():
-                content = self._read_file(file_path)
-                return self.detector.detect_language(content)
-            return "en"  # Default to English
-        else:
-            return None
+        if re.search(r'です|ます|である|だ。', content_no_code):  # Japanese sentence endings
+            return "ja"
+    
+    return "en"
 
-    def get_translated_path(self, original_path, target_lang):
+def get_file_language(file_path):
+    """Determine language based on file extension and content"""
+    path = Path(file_path)
+    
+    # Special case for README.md - detect language from content
+    if path.name.upper() == "README.MD":
+        if path.exists():
+            content = read_file(file_path)
+            return detect_language(content)
+        return "en"  # Default README to English
+    
+    # Check for explicit language extensions
+    if path.name.endswith('.ja.md'):
+        return "ja"
+    elif path.name.endswith('.en.md'):
+        return "en"
+    elif path.name.endswith('.md'):
+        # For other .md files, detect language
+        if path.exists():
+            content = read_file(file_path)
+            return detect_language(content)
+        return "en"  # Default to English
+    else:
+        return None
+
+def get_translated_path(original_path, target_lang):
         """Generate translated file path maintaining directory structure"""
         path = Path(original_path)
         
         # Special case for README.md
         if path.name.upper() == "README.MD":
+            stem = path.name[:-6]
             if target_lang == "ja":
-                return path.parent / "README.ja.md"
+                return path.with_name(f"{stem}.ja.md")
             else:
-                return path.parent / "README.en.md"
+                return path.with_name(f"{stem}.en.md")
+
         
         # Handle other files
         if target_lang == "ja":
@@ -259,118 +233,113 @@ class TranslationManager:
         
         return path
 
-    def rename_ambiguous_md_file(self, file_path):
-        """Rename .md file to .en.md or .ja.md based on detected language"""
+def rename_ambiguous_md_file(file_path):
+    """Rename .md file to .en.md or .ja.md based on detected language"""
+    path = Path(file_path)
+    
+    # Skip README.md and already explicit files
+    if (path.name.upper() == "README.MD" or 
+        path.name.endswith('.en.md') or 
+        path.name.endswith('.ja.md')):
+        return file_path
+    
+    if path.name.endswith('.md'):
+        content = read_file(file_path)
+        detected_lang = detect_language(content)
+        
+        # Create new name with explicit language
+        stem = path.stem
+        new_name = f"{stem}.{detected_lang}.md"
+        new_path = path.parent / new_name
+        
+        # Rename the file
+        print(f"Renaming {file_path} to {new_path} (detected: {detected_lang})")
+        try:
+            os.rename(file_path, new_path)
+            return str(new_path)
+        except Exception as e:
+            print(f"Error renaming {file_path}: {e}")
+            return file_path
+    
+    return file_path
+
+def read_file(file_path):
+    """Read file with simple encoding fallback"""
+    try:
+        with open(file_path, "r", encoding="utf-8") as file:
+            return file.read()
+    except UnicodeDecodeError:
+        with open(file_path, "r", encoding="utf-8-sig") as file:
+            return file.read()
+
+def get_file_hash(file_path):
+    """Get hash of file content for change detection"""
+    try:
+        with open(file_path, 'rb') as f:
+            return hashlib.md5(f.read()).hexdigest()
+    except FileNotFoundError:
+        return None
+
+def load_commit_history(repo_root='.'):
+    """Load commit hash history"""
+    history_file = Path(repo_root) / COMMIT_HASH_FILE
+    if history_file.exists():
+        try:
+            with open(history_file, 'r') as f:
+                return json.load(f)
+        except Exception as e:
+            print(f"Error loading commit history: {e}")
+            return {}
+    return {}
+
+def save_commit_history(history, repo_root='.'):
+    """Save commit hash history"""
+    history_file = Path(repo_root) / COMMIT_HASH_FILE
+    try:
+        with open(history_file, 'w') as f:
+            json.dump(history, f, indent=2)
+    except Exception as e:
+        print(f"Error saving commit history: {e}")
+
+def check_simultaneous_edits(changed_files):
+    """Check if both language pairs were edited in the same changeset"""
+    files_set = set(changed_files)
+    skip_files = set()
+    
+    for file_path in changed_files:
+        if file_path in skip_files:
+            continue
+            
         path = Path(file_path)
         
-        # Skip README.md and already explicit files
-        if (path.name.upper() == "README.MD" or 
-            path.name.endswith('.en.md') or 
-            path.name.endswith('.ja.md')):
-            return file_path
-        
-        if path.name.endswith('.md'):
-            content = self._read_file(file_path)
-            detected_lang = self.detector.detect_language(content)
-            
-            # Create new name with explicit language
-            stem = path.stem
-            new_name = f"{stem}.{detected_lang}.md"
-            new_path = path.parent / new_name
-            
-            # Rename the file
-            print(f"Renaming {file_path} to {new_path} (detected: {detected_lang})")
-            try:
-                os.rename(file_path, new_path)
-                return str(new_path)
-            except Exception as e:
-                print(f"Error renaming {file_path}: {e}")
-                return file_path
-        
-        return file_path
-
-    def _read_file(self, file_path):
-        """Read file with encoding fallback"""
-        encodings = ['utf-8', 'utf-8-sig', 'latin-1']
-        
-        for encoding in encodings:
-            try:
-                with open(file_path, "r", encoding=encoding) as file:
-                    return file.read()
-            except UnicodeDecodeError:
-                continue
-        
-        # If all encodings fail, return empty string
-        print(f"Warning: Could not read {file_path} with any encoding")
-        return ""
-
-    def get_file_hash(self, file_path):
-        """Get hash of file content for change detection"""
-        try:
-            with open(file_path, 'rb') as f:
-                return hashlib.md5(f.read()).hexdigest()
-        except FileNotFoundError:
-            return None
-
-    def load_commit_history(self):
-        """Load commit hash history"""
-        history_file = self.repo_root / COMMIT_HASH_FILE
-        if history_file.exists():
-            try:
-                with open(history_file, 'r') as f:
-                    return json.load(f)
-            except Exception as e:
-                print(f"Error loading commit history: {e}")
-                return {}
-        return {}
-
-    def save_commit_history(self, history):
-        """Save commit hash history"""
-        history_file = self.repo_root / COMMIT_HASH_FILE
-        try:
-            with open(history_file, 'w') as f:
-                json.dump(history, f, indent=2)
-        except Exception as e:
-            print(f"Error saving commit history: {e}")
-
-    def check_simultaneous_edits(self, changed_files):
-        """Check if both language pairs were edited in the same changeset"""
-        files_set = set(changed_files)
-        skip_files = set()
-        
-        for file_path in changed_files:
-            if file_path in skip_files:
-                continue
-                
-            path = Path(file_path)
-            
-            # Special case for README.md
-            if path.name.upper() == "README.MD":
-                readme_ja = path.parent / "README.ja.md"
-                if str(readme_ja) in files_set:
-                    print(f"Simultaneous edit detected: {file_path} and {readme_ja}")
-                    skip_files.add(file_path)
-                    skip_files.add(str(readme_ja))
-                continue
-            
-            # Check for paired files
-            if path.name.endswith('.en.md'):
-                stem = path.name[:-6]  # Remove .en.md
-                pair_path = path.parent / f"{stem}.ja.md"
-            elif path.name.endswith('.ja.md'):
-                stem = path.name[:-6]  # Remove .ja.md
-                pair_path = path.parent / f"{stem}.en.md"
-            else:
-                continue
-                
-            if str(pair_path) in files_set:
-                print(f"Simultaneous edit detected: {file_path} and {pair_path}")
+        # Special case for README.md
+        if path.name == "README.md":
+            readme_ja = path.parent / "README.ja.md"
+            if str(readme_ja) in files_set:
+                print(f"Simultaneous edit detected: {file_path} and {readme_ja}")
                 skip_files.add(file_path)
-                skip_files.add(str(pair_path))
+                skip_files.add(str(readme_ja))
+            continue
         
-        return skip_files
+        # Check for paired files
+        if path.name.endswith('.en.md'):
+            stem = path.name[:-6]  # Remove .en.md
+            pair_path = path.parent / f"{stem}.ja.md"
+        elif path.name.endswith('.ja.md'):
+            stem = path.name[:-6]  # Remove .ja.md
+            pair_path = path.parent / f"{stem}.en.md"
+        else:
+            continue
+            
+        if str(pair_path) in files_set:
+            print(f"Simultaneous edit detected: {file_path} and {pair_path}")
+            skip_files.add(file_path)
+            skip_files.add(str(pair_path))
+    
+    return skip_files
 
-    def calculate_change_percentage(self, old_content, new_content):
+
+def calculate_change_percentage(old_content, new_content):
         """Calculate percentage of lines changed between two versions"""
         if not old_content and not new_content:
             return 0  # Both empty
@@ -401,13 +370,13 @@ class TranslationManager:
         
         return percentage
 
-    def get_previous_version(self, file_path):
+def get_previous_version(file_path, repo_root='.'):
         """Get previous version of file from git history"""
         try:
             # Try to get file from previous commit
             result = subprocess.run(
                 ['git', 'show', f'HEAD~1:{file_path}'],
-                capture_output=True, text=True, cwd=self.repo_root
+                capture_output=True, text=True, cwd=repo_root
             )
             if result.returncode == 0:
                 return result.stdout
@@ -416,14 +385,14 @@ class TranslationManager:
         
         return None
 
-    def get_previous_from_history(self, file_path, commit_history):
+def get_previous_from_history(file_path, commit_history):
         """Get previous version from stored commit history"""
         file_key = str(file_path)
         if file_key in commit_history:
             return commit_history[file_key].get('content')
         return None
 
-    def get_current_translation(self, translated_file_path):
+def get_current_translation(translated_file_path):
         """Get existing translation file content"""
         if os.path.exists(translated_file_path):
             try:
@@ -434,7 +403,7 @@ class TranslationManager:
         
         return None
 
-    def incremental_translate(self, old_source, new_source, current_target, target_lang):
+def incremental_translate(old_source, new_source, current_target, target_lang):
         """Perform incremental translation using LLM with 3-file context"""
         from utils.markdown_translate import OpenAI
         import os
@@ -503,20 +472,20 @@ Updated {target_lang_name} translation:"""
             print(f"Error in incremental translation: {e}")
             return None
 
-    def smart_translate(self, old_source, new_source, current_target, target_lang):
+def smart_translate(old_source, new_source, current_target, target_lang, incremental_threshold):
         """Hybrid translation with configurable threshold"""
         
-        change_percentage = self.calculate_change_percentage(old_source, new_source)
+        change_percentage = calculate_change_percentage(old_source, new_source)
         print(f"Change percentage: {change_percentage:.1f}%")
         
-        if change_percentage >= self.incremental_threshold:
+        if change_percentage >= incremental_threshold:
             # Large changes - use full translation
-            print(f"Large changes detected ({change_percentage:.1f}% >= {self.incremental_threshold}%), using full translation")
+            print(f"Large changes detected ({change_percentage:.1f}% >= {incremental_threshold}%), using full translation")
             return translate_text(new_source, target_lang)
         else:
             # Small changes - use incremental translation
-            print(f"Small changes detected ({change_percentage:.1f}% < {self.incremental_threshold}%), using incremental translation")
-            result = self.incremental_translate(old_source, new_source, current_target, target_lang)
+            print(f"Small changes detected ({change_percentage:.1f}% < {incremental_threshold}%), using incremental translation")
+            result = incremental_translate(old_source, new_source, current_target, target_lang)
             
             # Fallback to full translation if incremental fails
             if not result:
@@ -525,26 +494,26 @@ Updated {target_lang_name} translation:"""
             
             return result
 
-    def sync_translations(self, original_file, commit_history, current_commit_hash):
+def sync_translations(original_file, commit_history, current_commit_hash, ignore_patterns, incremental_threshold):
         """Sync translations with hybrid translation strategy"""
         if not os.path.exists(original_file):
             print(f"File {original_file} not found, skipping")
             return False
 
         # Check if file should be ignored
-        if self.config.should_ignore_file(original_file):
+        if should_ignore_file(original_file, ignore_patterns):
             return False
         
         # First, handle .md file renaming if needed
-        processed_file = self.rename_ambiguous_md_file(original_file)
+        processed_file = rename_ambiguous_md_file(original_file)
         
-        source_lang = self.get_file_language(processed_file)
+        source_lang = get_file_language(processed_file)
         if not source_lang:
             print(f"Cannot determine language for {processed_file}, skipping")
             return False
         
         # Get file hash for change detection
-        current_hash = self.get_file_hash(processed_file)
+        current_hash = get_file_hash(processed_file)
         file_key = str(processed_file)
         
         # Skip hash checking for PR events - always translate on PR changes
@@ -559,30 +528,34 @@ Updated {target_lang_name} translation:"""
             return False
         
         # Current source content
-        new_source = self._read_file(processed_file)
+        new_source = read_file(processed_file)
         if not new_source.strip():
             print(f"File {processed_file} is empty, skipping")
             return False
         
         # Get previous version for hybrid translation
-        old_source = self.get_previous_version(processed_file)
+        old_source = get_previous_version(processed_file)
         if not old_source:
-            old_source = self.get_previous_from_history(processed_file, commit_history)
+            old_source = get_previous_from_history(processed_file, commit_history)
         
-        # Skip files that haven't actually changed (unless it's a PR event)
+        # Skip files that haven't actually changed
         if old_source and old_source.strip() == new_source.strip():
             print(f"File {processed_file} has no actual changes, skipping translation")
             return False
+        elif old_source:
+            print(f"File {processed_file} has changes detected (old vs new content differs)")
+        else:
+            print(f"File {processed_file} - no previous version found, treating as new/changed")
             
         target_langs = [lang for lang in TARGET_LANGUAGES if lang != source_lang]
         
         translated = False
         for lang in target_langs:
-            translated_file = self.get_translated_path(processed_file, lang)
+            translated_file = get_translated_path(processed_file, lang)
             translated_file.parent.mkdir(parents=True, exist_ok=True)
             
             # Get current translation if it exists
-            current_target = self.get_current_translation(str(translated_file))
+            current_target = get_current_translation(str(translated_file))
             
             print(f"Translating {processed_file} ({source_lang}) → {translated_file} ({lang})")
             
@@ -591,8 +564,8 @@ Updated {target_lang_name} translation:"""
                 if old_source and current_target:
                     # We have all 3 files - use hybrid approach
                     print(f"Using hybrid translation strategy")
-                    translated_content = self.smart_translate(
-                        old_source, new_source, current_target, lang
+                    translated_content = smart_translate(
+                        old_source, new_source, current_target, lang, incremental_threshold
                     )
                 else:
                     # Missing context - fall back to full translation
@@ -607,7 +580,7 @@ Updated {target_lang_name} translation:"""
                     translated_file.write_text(translated_content, encoding='utf-8')
                     
                     # Apply formatting fixes immediately
-                    self.formatter.apply_formatting_fixes(str(translated_file))
+                    apply_formatting_fixes(str(translated_file))
                     
                     translated = True
                     
@@ -641,19 +614,20 @@ Updated {target_lang_name} translation:"""
         
         return translated
 
-    def find_markdown_files(self):
+def find_markdown_files(repo_root='.', ignore_patterns=None):
         """Find all markdown files in project, respecting ignore patterns and avoiding translation loops"""
         all_markdown_files = []
         
         # Recursively find all .md files from project root
-        for root, dirs, files in os.walk(self.repo_root):
+        for root, dirs, files in os.walk(repo_root):
             # Skip ignored directories
-            dirs[:] = [d for d in dirs if not self.config.should_ignore_file(os.path.join(root, d))]
+            if ignore_patterns:
+                dirs[:] = [d for d in dirs if not should_ignore_file(os.path.join(root, d), ignore_patterns)]
             
             for file in files:
                 if file.endswith('.md'):
-                    file_path = os.path.relpath(os.path.join(root, file), self.repo_root)
-                    if not self.config.should_ignore_file(file_path):
+                    file_path = os.path.relpath(os.path.join(root, file), repo_root)
+                    if not ignore_patterns or not should_ignore_file(file_path, ignore_patterns):
                         all_markdown_files.append(file_path)
         
         # Filter out translation files when their source exists to prevent loops
@@ -688,7 +662,7 @@ Updated {target_lang_name} translation:"""
         
         return filtered_files
 
-    def process_specific_files(self, file_list, commit_history, current_commit_hash):
+def process_specific_files(file_list, commit_history, current_commit_hash, ignore_patterns, incremental_threshold):
         """Process specific files with simultaneous edit detection"""
         if not file_list:
             return []
@@ -696,7 +670,7 @@ Updated {target_lang_name} translation:"""
         files = [f.strip() for f in file_list.split(',') if f.strip().endswith('.md')]
         
         # Check for simultaneous edits
-        skip_files = self.check_simultaneous_edits(files)
+        skip_files = check_simultaneous_edits(files)
         
         if skip_files:
             print(f"Skipping translation for simultaneously edited files: {skip_files}")
@@ -710,14 +684,14 @@ Updated {target_lang_name} translation:"""
                 
             if os.path.exists(file):
                 print(f"Processing specific file: {file}")
-                if self.sync_translations(file, commit_history, current_commit_hash):
+                if sync_translations(file, commit_history, current_commit_hash, ignore_patterns, incremental_threshold):
                     processed.append(file)
             else:
                 print(f"File not found: {file}")
         
         return processed
 
-    def delete_translated_files(self, deleted_files):
+def delete_translated_files(deleted_files):
         """Delete corresponding translated files"""
         if not deleted_files:
             return
@@ -740,13 +714,13 @@ Updated {target_lang_name} translation:"""
                             print(f"Error deleting {readme_lang}: {e}")
                 continue
             
-            source_lang = self.get_file_language(file)
+            source_lang = get_file_language(file)
             if not source_lang:
                 continue
                 
             # Delete corresponding translation
             target_lang = "ja" if source_lang == "en" else "en"
-            translated_path = self.get_translated_path(file, target_lang)
+            translated_path = get_translated_path(file, target_lang)
             
             if translated_path.exists():
                 print(f"Deleting translated file: {translated_path}")
@@ -801,21 +775,18 @@ def main():
     print(f"PR Number: {args.pr_number}")
     print(f"Commit Hash: {args.commit_hash}")
     
-    # Initialize translation manager
-    manager = TranslationManager(
-        repo_root='.',
-        client_repo=args.client_repo,
-        pr_number=args.pr_number
-    )
+    # Load configuration
+    ignore_patterns = load_ignore_patterns('.')
+    incremental_threshold = load_threshold('.')
     
     # Load commit history
-    commit_history = manager.load_commit_history()
+    commit_history = load_commit_history('.')
     current_commit_hash = args.commit_hash
 
     # Handle deleted files first
     if args.deleted_files:
         print(f"Processing deleted files: {args.deleted_files}")
-        manager.delete_translated_files(args.deleted_files)
+        delete_translated_files(args.deleted_files)
 
     # Process translations
     translation_count = 0
@@ -823,35 +794,35 @@ def main():
     try:
         if args.initial_setup:
             print("Performing initial setup translation")
-            markdown_files = manager.find_markdown_files()
+            markdown_files = find_markdown_files('.', ignore_patterns)
             if not markdown_files:
                 print("No markdown files found to translate")
             else:
                 print(f"Found {len(markdown_files)} markdown files to process")
                 for file in markdown_files:
-                    if manager.sync_translations(file, commit_history, current_commit_hash):
+                    if sync_translations(file, commit_history, current_commit_hash, ignore_patterns, incremental_threshold):
                         translation_count += 1
                         
         elif args.files:
             print(f"Processing specific files: {args.files}")
-            processed_files = manager.process_specific_files(
-                args.files, commit_history, current_commit_hash
+            processed_files = process_specific_files(
+                args.files, commit_history, current_commit_hash, ignore_patterns, incremental_threshold
             )
             translation_count = len(processed_files)
             
         else:
             print("Processing all markdown files")
-            markdown_files = manager.find_markdown_files()
+            markdown_files = find_markdown_files('.', ignore_patterns)
             if not markdown_files:
                 print("No markdown files found to translate")
             else:
                 print(f"Found {len(markdown_files)} markdown files to process")
                 for file in markdown_files:
-                    if manager.sync_translations(file, commit_history, current_commit_hash):
+                    if sync_translations(file, commit_history, current_commit_hash, ignore_patterns, incremental_threshold):
                         translation_count += 1
 
         # Save updated commit history
-        manager.save_commit_history(commit_history)
+        save_commit_history(commit_history, '.')
         
         print(f"=== Translation Complete: {translation_count} files processed ===")
         
