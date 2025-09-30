@@ -629,35 +629,9 @@ def find_markdown_files(repo_root='.', ignore_patterns=None):
                     if not ignore_patterns or not should_ignore_file(file_path, ignore_patterns):
                         all_markdown_files.append(file_path)
         
-        # Filter out translation files when their source exists to prevent loops
-        filtered_files = []
-        file_set = set(all_markdown_files)
-        
-        for file_path in all_markdown_files:
-            path = Path(file_path)
-            
-            # Skip .ja.md files if corresponding .en.md exists
-            if path.name.endswith('.ja.md'):
-                stem = path.name[:-6]  # Remove .ja.md
-                en_counterpart = str(path.parent / f"{stem}.en.md")
-                
-                if en_counterpart in file_set:
-                    print(f"Skipping {file_path} - corresponding English source {en_counterpart} exists")
-                    continue
-            
-            # Skip README.ja.md if README.en.md or README.md exists
-            elif path.name.upper().endswith('.JA.MD') and 'README' in path.name.upper():
-                base_dir = path.parent
-                base_name = path.name[:-6]  # Remove .ja.md
-                
-                en_counterpart = str(base_dir / f"{base_name}.en.md")
-                md_counterpart = str(base_dir / f"{base_name[:-3]}.md")  # Remove .ja, add .md
-                
-                if en_counterpart in file_set or md_counterpart in file_set:
-                    print(f"Skipping {file_path} - corresponding source file exists")
-                    continue
-            
-            filtered_files.append(file_path)
+        # Return all markdown files - both .en.md and .ja.md can be sources
+        # The simultaneous edit detection will handle conflicts when both are changed
+        filtered_files = all_markdown_files
         
         return filtered_files
 
