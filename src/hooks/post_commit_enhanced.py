@@ -199,39 +199,38 @@ def get_file_language(file_path):
         return None
 
 def get_translated_path(original_path, target_lang):
-        """Generate translated file path maintaining directory structure"""
-        path = Path(original_path)
+    """Generate translated file path maintaining directory structure"""
+    path = Path(original_path)
         
-        # Special case for README.md
-        if path.name.upper() == "README.MD":
-            stem = path.name[:-6]
-            if target_lang == "ja":
-                return path.with_name(f"{stem}.ja.md")
-            else:
-                return path.with_name(f"{stem}.en.md")
-
-        
-        # Handle other files
+    # Special case for README.md
+    if path.name.upper() == "README.MD":
+        stem = path.name[:-3]  # Remove .md (3 characters)
         if target_lang == "ja":
-            if path.name.endswith('.en.md'):
-                # Convert filename.en.md to filename.ja.md
-                stem = path.name[:-6]  # Remove .en.md
-                return path.parent / f"{stem}.ja.md"
-            elif path.name.endswith('.md'):
-                # Convert filename.md to filename.ja.md
-                stem = path.stem
-                return path.parent / f"{stem}.ja.md"
-        else:  # target_lang == "en"
-            if path.name.endswith('.ja.md'):
-                # Convert filename.ja.md to filename.en.md
-                stem = path.name[:-6]  # Remove .ja.md
-                return path.parent / f"{stem}.en.md"
-            elif path.name.endswith('.md'):
-                # Convert filename.md to filename.en.md
-                stem = path.stem
-                return path.parent / f"{stem}.en.md"
-        
-        return path
+            return path.parent / f"{stem}.ja.md"
+        else:
+            return path.parent / f"{stem}.en.md"
+    
+    # Handle other files
+    if target_lang == "ja":
+        if path.name.endswith('.en.md'):
+            # Convert filename.en.md to filename.ja.md
+            stem = path.name[:-6]  # Remove .en.md
+            return path.parent / f"{stem}.ja.md"
+        elif path.name.endswith('.md'):
+            # Convert filename.md to filename.ja.md
+            stem = path.stem
+            return path.parent / f"{stem}.ja.md"
+    else:  # target_lang == "en"
+        if path.name.endswith('.ja.md'):
+            # Convert filename.ja.md to filename.en.md
+            stem = path.name[:-6]  # Remove .ja.md
+            return path.parent / f"{stem}.en.md"
+        elif path.name.endswith('.md'):
+            # Convert filename.md to filename.en.md
+            stem = path.stem
+            return path.parent / f"{stem}.en.md"
+    
+    return path
 
 def rename_ambiguous_md_file(file_path):
     """Rename .md file to .en.md or .ja.md based on detected language"""
