@@ -526,6 +526,19 @@ def sync_translations(original_file, commit_history, current_commit_hash, ignore
         file_key = str(processed_file)
         
         # Check if file was already processed with this hash
+        print(f"DEBUG: Hash check for {processed_file}")
+        print(f"DEBUG: file_key={file_key}")
+        print(f"DEBUG: current_hash={current_hash}")
+        print(f"DEBUG: file_key in commit_history: {file_key in commit_history}")
+        if file_key in commit_history:
+            stored_hash = commit_history[file_key].get('hash')
+            stored_commit = commit_history[file_key].get('commit')
+            print(f"DEBUG: stored_hash={stored_hash}")
+            print(f"DEBUG: stored_commit={stored_commit}")
+            print(f"DEBUG: current_commit_hash={current_commit_hash}")
+            print(f"DEBUG: hash_match={stored_hash == current_hash}")
+            print(f"DEBUG: commit_match={stored_commit == current_commit_hash}")
+        
         if (file_key in commit_history and 
             commit_history[file_key].get('hash') == current_hash and
             commit_history[file_key].get('commit') == current_commit_hash):
