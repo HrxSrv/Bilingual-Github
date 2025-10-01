@@ -302,22 +302,18 @@ def save_commit_history(history, repo_root='.'):
 
 def check_simultaneous_edits(changed_files):
     """Check if both language pairs were edited in the same changeset"""
-    print(f"DEBUG: Checking simultaneous edits for files: {changed_files}")
     files_set = set(changed_files)
     skip_files = set()
     
     for file_path in changed_files:
         if file_path in skip_files:
-            print(f"DEBUG: {file_path} already in skip_files, continuing")
             continue
             
         path = Path(file_path)
-        print(f"DEBUG: Processing {file_path}")
         
         # Special case for README.md
         if path.name == "README.md":
             readme_ja = path.parent / "README.ja.md"
-            print(f"DEBUG: README.md case - looking for {readme_ja} in {files_set}")
             if str(readme_ja) in files_set:
                 print(f"Simultaneous edit detected: {file_path} and {readme_ja}")
                 skip_files.add(file_path)
@@ -328,23 +324,17 @@ def check_simultaneous_edits(changed_files):
         if path.name.endswith('.en.md'):
             stem = path.name[:-6]  # Remove .en.md
             pair_path = path.parent / f"{stem}.ja.md"
-            print(f"DEBUG: .en.md file - looking for pair {pair_path} in {files_set}")
         elif path.name.endswith('.ja.md'):
             stem = path.name[:-6]  # Remove .ja.md
             pair_path = path.parent / f"{stem}.en.md"
-            print(f"DEBUG: .ja.md file - looking for pair {pair_path} in {files_set}")
         else:
-            print(f"DEBUG: {file_path} doesn't match any pattern, skipping")
             continue
             
         if str(pair_path) in files_set:
             print(f"Simultaneous edit detected: {file_path} and {pair_path}")
             skip_files.add(file_path)
             skip_files.add(str(pair_path))
-        else:
-            print(f"DEBUG: Pair {pair_path} not found in files_set")
     
-    print(f"DEBUG: Final skip_files: {skip_files}")
     return skip_files
 
 
@@ -525,25 +515,31 @@ def sync_translations(original_file, commit_history, current_commit_hash, ignore
         current_hash = get_file_hash(processed_file)
         file_key = str(processed_file)
         
-        # Check if file was already processed with this hash
-        print(f"DEBUG: Hash check for {processed_file}")
-        print(f"DEBUG: file_key={file_key}")
-        print(f"DEBUG: current_hash={current_hash}")
-        print(f"DEBUG: file_key in commit_history: {file_key in commit_history}")
-        if file_key in commit_history:
-            stored_hash = commit_history[file_key].get('hash')
-            stored_commit = commit_history[file_key].get('commit')
-            print(f"DEBUG: stored_hash={stored_hash}")
-            print(f"DEBUG: stored_commit={stored_commit}")
-            print(f"DEBUG: current_commit_hash={current_commit_hash}")
-            print(f"DEBUG: hash_match={stored_hash == current_hash}")
-            print(f"DEBUG: commit_match={stored_commit == current_commit_hash}")
+        # Skip hash checking for PR events - always translate on PR changes
+        is_pr_event = os.environ.get('GITHUB_EVENT_NAME') == 'pull_request'
         
-        if (file_key in commit_history and 
-            commit_history[file_key].get('hash') == current_hash and
-            commit_history[file_key].get('commit') == current_commit_hash):
-            print(f"File {processed_file} already processed with current hash, skipping")
-            return False
+        if is_pr_event:
+            print(f"PR event detected, translating {processed_file} regardless of hash")
+        else:
+            # Check if file was already processed with this hash (only for non-PR events)
+            print(f"DEBUG: Hash check for {processed_file}")
+            print(f"DEBUG: file_key={file_key}")
+            print(f"DEBUG: current_hash={current_hash}")
+            print(f"DEBUG: file_key in commit_history: {file_key in commit_history}")
+            if file_key in commit_history:
+                stored_hash = commit_history[file_key].get('hash')
+                stored_commit = commit_history[file_key].get('commit')
+                print(f"DEBUG: stored_hash={stored_hash}")
+                print(f"DEBUG: stored_commit={stored_commit}")
+                print(f"DEBUG: current_commit_hash={current_commit_hash}")
+                print(f"DEBUG: hash_match={stored_hash == current_hash}")
+                print(f"DEBUG: commit_match={stored_commit == current_commit_hash}")
+            
+            if (file_key in commit_history and 
+                commit_history[file_key].get('hash') == current_hash and
+                commit_history[file_key].get('commit') == current_commit_hash):
+                print(f"File {processed_file} has no actual changes, skipping translation")
+                return False
         
         # Current source content
         new_source = read_file(processed_file)
@@ -661,11 +657,18 @@ def process_specific_files(file_list, commit_history, current_commit_hash, ignor
         
         files = [f.strip() for f in file_list.split(',') if f.strip().endswith('.md')]
         
-        # Check for simultaneous edits
-        skip_files = check_simultaneous_edits(files)
+        # Skip simultaneous edit detection for PR events - always translate on PR changes
+        is_pr_event = os.environ.get('GITHUB_EVENT_NAME') == 'pull_request'
         
-        if skip_files:
-            print(f"Skipping translation for simultaneously edited files: {skip_files}")
+        if is_pr_event:
+            print("PR event detected, skipping simultaneous edit detection")
+            skip_files = set()
+        else:
+            # Check for simultaneous edits only for non-PR events
+            skip_files = check_simultaneous_edits(files)
+            
+            if skip_files:
+                print(f"Skipping translation for simultaneously edited files: {skip_files}")
         
         # Process files that weren't simultaneously edited
         processed = []
