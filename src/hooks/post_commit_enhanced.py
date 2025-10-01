@@ -621,8 +621,6 @@ def sync_translations(original_file, commit_history, current_commit_hash, ignore
             return False
         elif is_pr_event:
             print(f"File {processed_file} has changes detected (PR event - trusting workflow filtering)")
-        else:
-            print(f"File {processed_file} has changes detected (old vs new content differs)")
         elif old_source:
             print(f"File {processed_file} has changes detected (old vs new content differs)")
         else:
