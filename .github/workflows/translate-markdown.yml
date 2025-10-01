@@ -144,7 +144,7 @@ jobs:
           COMMIT_HASH: ${{ inputs.commit_hash }}
           PR_NUMBER: ${{ inputs.pr_number }}
           CLIENT_REPO: ${{ inputs.client_repo }}
-          GITHUB_EVENT_NAME: 'pull_request'
+          GITHUB_EVENT_NAME: ${{ github.event_name }}
         run: |
           echo "=== Starting Hybrid Translation Process ==="
           echo "OpenAI API Key is set: $([ -n \"$OPENAI_API_KEY\" ] && echo \"yes\" || echo \"no\")"
