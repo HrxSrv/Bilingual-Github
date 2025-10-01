@@ -615,10 +615,14 @@ def sync_translations(original_file, commit_history, current_commit_hash, ignore
         if not old_source:
             old_source = get_previous_from_history(processed_file, commit_history)
         
-        # Skip files that haven't actually changed
-        if old_source and old_source.strip() == new_source.strip():
+        # Skip files that haven't actually changed (but not for PR events since workflow already filtered)
+        if not is_pr_event and old_source and old_source.strip() == new_source.strip():
             print(f"File {processed_file} has no actual changes, skipping translation")
             return False
+        elif is_pr_event:
+            print(f"File {processed_file} has changes detected (PR event - trusting workflow filtering)")
+        else:
+            print(f"File {processed_file} has changes detected (old vs new content differs)")
         elif old_source:
             print(f"File {processed_file} has changes detected (old vs new content differs)")
         else:
