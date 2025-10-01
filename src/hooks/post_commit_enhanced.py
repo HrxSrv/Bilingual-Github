@@ -23,7 +23,6 @@ sys.path.insert(0, src_dir)
 from utils.markdown_translate import translate_text
 
 TARGET_LANGUAGES = ["en", "ja"]
-COMMIT_HASH_FILE = ".translation_commits.json"
 TRANSLATION_IGNORE_FILE = ".translation_ignore"
 
 DEFAULT_IGNORE_PATTERNS = [
@@ -279,26 +278,7 @@ def get_file_hash(file_path):
     except FileNotFoundError:
         return None
 
-def load_commit_history(repo_root='.'):
-    """Load commit hash history"""
-    history_file = Path(repo_root) / COMMIT_HASH_FILE
-    if history_file.exists():
-        try:
-            with open(history_file, 'r') as f:
-                return json.load(f)
-        except Exception as e:
-            print(f"Error loading commit history: {e}")
-            return {}
-    return {}
-
-def save_commit_history(history, repo_root='.'):
-    """Save commit hash history"""
-    history_file = Path(repo_root) / COMMIT_HASH_FILE
-    try:
-        with open(history_file, 'w') as f:
-            json.dump(history, f, indent=2)
-    except Exception as e:
-        print(f"Error saving commit history: {e}")
+# Removed commit history tracking - now relying on workflow-level filtering
 
 def check_simultaneous_edits(changed_files):
     """Check if both language pairs were edited in the same changeset"""
@@ -447,12 +427,7 @@ def get_previous_version(file_path, repo_root='.'):
         
         return None
 
-def get_previous_from_history(file_path, commit_history):
-        """Get previous version from stored commit history"""
-        file_key = str(file_path)
-        if file_key in commit_history:
-            return commit_history[file_key].get('content')
-        return None
+# Removed - using git-based previous version detection only
 
 def get_current_translation(translated_file_path):
         """Get existing translation file content"""
@@ -556,7 +531,7 @@ def smart_translate(old_source, new_source, current_target, target_lang, increme
             
             return result
 
-def sync_translations(original_file, commit_history, current_commit_hash, ignore_patterns, incremental_threshold):
+def sync_translations(original_file, ignore_patterns, incremental_threshold):
         """Sync translations with hybrid translation strategy"""
         if not os.path.exists(original_file):
             print(f"File {original_file} not found, skipping")
@@ -574,35 +549,13 @@ def sync_translations(original_file, commit_history, current_commit_hash, ignore
             print(f"Cannot determine language for {processed_file}, skipping")
             return False
         
-        # Get file hash for change detection
-        current_hash = get_file_hash(processed_file)
-        file_key = str(processed_file)
-        
-        # Skip hash checking for PR events - always translate on PR changes
+        # For PR events, trust workflow filtering; for push events, rely on git-based change detection
         is_pr_event = os.environ.get('GITHUB_EVENT_NAME') == 'pull_request'
         
         if is_pr_event:
-            print(f"PR event detected, translating {processed_file} regardless of hash")
+            print(f"PR event detected, translating {processed_file} (workflow already filtered)")
         else:
-            # Check if file was already processed with this hash (only for non-PR events)
-            print(f"DEBUG: Hash check for {processed_file}")
-            print(f"DEBUG: file_key={file_key}")
-            print(f"DEBUG: current_hash={current_hash}")
-            print(f"DEBUG: file_key in commit_history: {file_key in commit_history}")
-            if file_key in commit_history:
-                stored_hash = commit_history[file_key].get('hash')
-                stored_commit = commit_history[file_key].get('commit')
-                print(f"DEBUG: stored_hash={stored_hash}")
-                print(f"DEBUG: stored_commit={stored_commit}")
-                print(f"DEBUG: current_commit_hash={current_commit_hash}")
-                print(f"DEBUG: hash_match={stored_hash == current_hash}")
-                print(f"DEBUG: commit_match={stored_commit == current_commit_hash}")
-            
-            if (file_key in commit_history and 
-                commit_history[file_key].get('hash') == current_hash and
-                commit_history[file_key].get('commit') == current_commit_hash):
-                print(f"File {processed_file} has no actual changes, skipping translation")
-                return False
+            print(f"Push event detected, processing {processed_file}")
         
         # Current source content
         new_source = read_file(processed_file)
@@ -612,8 +565,6 @@ def sync_translations(original_file, commit_history, current_commit_hash, ignore
         
         # Get previous version for hybrid translation
         old_source = get_previous_version(processed_file)
-        if not old_source:
-            old_source = get_previous_from_history(processed_file, commit_history)
         
         # Skip files that haven't actually changed (but not for PR events since workflow already filtered)
         if not is_pr_event and old_source and old_source.strip() == new_source.strip():
@@ -663,16 +614,7 @@ def sync_translations(original_file, commit_history, current_commit_hash, ignore
                     
                     translated = True
                     
-                    # Update commit history for translated file
-                    translated_key = str(translated_file)
-                    commit_history[translated_key] = {
-                        'hash': hashlib.md5(translated_content.encode()).hexdigest(),
-                        'commit': current_commit_hash,
-                        'timestamp': datetime.now().isoformat(),
-                        'source_file': file_key,
-                        'source_lang': source_lang,
-                        'target_lang': lang
-                    }
+                    # Translation completed successfully
                     print(f"Successfully translated to {translated_file}")
                 else:
                     print(f"Translation failed or returned empty content for {lang}")
@@ -681,15 +623,7 @@ def sync_translations(original_file, commit_history, current_commit_hash, ignore
                 print(f"Error translating {processed_file} to {lang}: {e}")
                 continue
         
-        # Update commit history for source file (store content for next comparison)
-        if translated:
-            commit_history[file_key] = {
-                'hash': current_hash,
-                'commit': current_commit_hash,
-                'timestamp': datetime.now().isoformat(),
-                'language': source_lang,
-                'content': new_source  # Store content for next hybrid translation
-            }
+        # Translation process completed
         
         return translated
 
@@ -715,7 +649,7 @@ def find_markdown_files(repo_root='.', ignore_patterns=None):
         
         return filtered_files
 
-def process_specific_files(file_list, commit_history, current_commit_hash, ignore_patterns, incremental_threshold):
+def process_specific_files(file_list, ignore_patterns, incremental_threshold):
         """Process specific files with simultaneous edit detection"""
         if not file_list:
             return []
@@ -737,7 +671,7 @@ def process_specific_files(file_list, commit_history, current_commit_hash, ignor
                 
             if os.path.exists(file):
                 print(f"Processing specific file: {file}")
-                if sync_translations(file, commit_history, current_commit_hash, ignore_patterns, incremental_threshold):
+                if sync_translations(file, ignore_patterns, incremental_threshold):
                     processed.append(file)
             else:
                 print(f"File not found: {file}")
@@ -832,9 +766,7 @@ def main():
     ignore_patterns = load_ignore_patterns('.')
     incremental_threshold = load_threshold('.')
     
-    # Load commit history
-    commit_history = load_commit_history('.')
-    current_commit_hash = args.commit_hash
+    # Simplified - no commit history tracking needed
 
     # Handle deleted files first
     if args.deleted_files:
@@ -853,13 +785,13 @@ def main():
             else:
                 print(f"Found {len(markdown_files)} markdown files to process")
                 for file in markdown_files:
-                    if sync_translations(file, commit_history, current_commit_hash, ignore_patterns, incremental_threshold):
+                    if sync_translations(file, ignore_patterns, incremental_threshold):
                         translation_count += 1
                         
         elif args.files:
             print(f"Processing specific files: {args.files}")
             processed_files = process_specific_files(
-                args.files, commit_history, current_commit_hash, ignore_patterns, incremental_threshold
+                args.files, ignore_patterns, incremental_threshold
             )
             translation_count = len(processed_files)
             
@@ -871,11 +803,10 @@ def main():
             else:
                 print(f"Found {len(markdown_files)} markdown files to process")
                 for file in markdown_files:
-                    if sync_translations(file, commit_history, current_commit_hash, ignore_patterns, incremental_threshold):
+                    if sync_translations(file, ignore_patterns, incremental_threshold):
                         translation_count += 1
 
-        # Save updated commit history
-        save_commit_history(commit_history, '.')
+        # No more commit history tracking needed
         
         print(f"=== Translation Complete: {translation_count} files processed ===")
         
