@@ -337,6 +337,69 @@ def check_simultaneous_edits(changed_files):
     
     return skip_files
 
+def was_file_changed_by_translation_commit(file_path):
+    """Check if a file was last changed by a translation commit"""
+    try:
+        # Get the last commit that modified this file
+        result = subprocess.run(['git', 'log', '-1', '--pretty=format:%s', '--', file_path], 
+                              capture_output=True, text=True, cwd='.')
+        if result.returncode == 0:
+            last_commit_msg = result.stdout.strip()
+            # Check if it was a translation commit
+            is_translation_commit = ('[skip-translation]' in last_commit_msg or 
+                                   'Update markdown translations' in last_commit_msg or
+                                   '🌐' in last_commit_msg)
+            print(f"DEBUG: Last commit for {file_path}: '{last_commit_msg}' (translation: {is_translation_commit})")
+            return is_translation_commit
+    except Exception as e:
+        print(f"DEBUG: Error checking commit history for {file_path}: {e}")
+    return False
+
+def check_simultaneous_edits_smart(changed_files):
+    """Smart simultaneous edit detection that ignores translation commits"""
+    files_set = set(changed_files)
+    skip_files = set()
+    
+    for file_path in changed_files:
+        if file_path in skip_files:
+            continue
+            
+        path = Path(file_path)
+        
+        # Special case for README.md
+        if path.name == "README.md":
+            readme_ja = path.parent / "README.ja.md"
+            if str(readme_ja) in files_set:
+                # Check if the .ja.md file was changed by a translation commit
+                if was_file_changed_by_translation_commit(str(readme_ja)):
+                    print(f"DEBUG: {readme_ja} was changed by translation commit, not treating as simultaneous edit")
+                    continue
+                print(f"Simultaneous edit detected: {file_path} and {readme_ja}")
+                skip_files.add(file_path)
+                skip_files.add(str(readme_ja))
+            continue
+        
+        # Check for paired files
+        if path.name.endswith('.en.md'):
+            stem = path.name[:-6]  # Remove .en.md
+            pair_path = path.parent / f"{stem}.ja.md"
+        elif path.name.endswith('.ja.md'):
+            stem = path.name[:-6]  # Remove .ja.md
+            pair_path = path.parent / f"{stem}.en.md"
+        else:
+            continue
+            
+        if str(pair_path) in files_set:
+            # Check if the pair file was changed by a translation commit
+            if was_file_changed_by_translation_commit(str(pair_path)):
+                print(f"DEBUG: {pair_path} was changed by translation commit, not treating as simultaneous edit")
+                continue
+            print(f"Simultaneous edit detected: {file_path} and {pair_path}")
+            skip_files.add(file_path)
+            skip_files.add(str(pair_path))
+    
+    return skip_files
+
 
 def calculate_change_percentage(old_content, new_content):
         """Calculate percentage of lines changed between two versions"""
@@ -657,18 +720,11 @@ def process_specific_files(file_list, commit_history, current_commit_hash, ignor
         
         files = [f.strip() for f in file_list.split(',') if f.strip().endswith('.md')]
         
-        # Skip simultaneous edit detection for PR events - always translate on PR changes
-        is_pr_event = os.environ.get('GITHUB_EVENT_NAME') == 'pull_request'
+        # Check for simultaneous edits (when user manually edits both language files)
+        skip_files = check_simultaneous_edits(files)
         
-        if is_pr_event:
-            print("PR event detected, skipping simultaneous edit detection")
-            skip_files = set()
-        else:
-            # Check for simultaneous edits only for non-PR events
-            skip_files = check_simultaneous_edits(files)
-            
-            if skip_files:
-                print(f"Skipping translation for simultaneously edited files: {skip_files}")
+        if skip_files:
+            print(f"Skipping translation for simultaneously edited files: {skip_files}")
         
         # Process files that weren't simultaneously edited
         processed = []
