@@ -66,6 +66,10 @@ jobs:
     steps:
     - name: Checkout translation server repository
       uses: actions/checkout@v4
+      with:
+        repository: hrxsrv/bilingual-github
+        token: ${{ secrets.GITHUB_TOKEN }}
+        path: translation-server
       
     - name: Checkout client repository
       uses: actions/checkout@v4
@@ -117,6 +121,7 @@ jobs:
         GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
       run: |
         # Ensure we're in the translation server repository root
+        cd translation-server
         pwd
         ls -la
         echo "Looking for translate.py..."
@@ -144,6 +149,7 @@ jobs:
         sleep 30
         
         # Debug info for retry
+        cd translation-server
         pwd
         ls -la translate.py
         
