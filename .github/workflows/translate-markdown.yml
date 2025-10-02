@@ -120,23 +120,13 @@ jobs:
         OPENAI_API_KEY: ${{ secrets.OPENAI_API_KEY }}
         GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
       run: |
-        # Ensure we're in the translation server repository root
         cd translation-server
-        pwd
-        ls -la
-        echo "Looking for translate.py..."
-        ls -la translate.py
-        
         python translate.py \
           --repository "${{ inputs.client_repo }}" \
           --pr-number "${{ inputs.pr_number }}" \
           --files '${{ inputs.files_metadata }}' \
           --ignore-patterns '${{ inputs.ignore_patterns }}' \
-          --working-dir "client-repo" \
-          --pr-head-sha "${{ inputs.pr_head_sha }}" \
-          --pr-base-sha "${{ inputs.pr_base_sha }}" \
-          --target-branch "${{ inputs.target_branch }}" \
-          --base-branch "${{ inputs.base_branch }}"
+          --working-dir "../client-repo"
       continue-on-error: true
       
     - name: Handle translation failure with retry
@@ -158,11 +148,7 @@ jobs:
           --pr-number "${{ inputs.pr_number }}" \
           --files '${{ inputs.files_metadata }}' \
           --ignore-patterns '${{ inputs.ignore_patterns }}' \
-          --working-dir "client-repo" \
-          --pr-head-sha "${{ inputs.pr_head_sha }}" \
-          --pr-base-sha "${{ inputs.pr_base_sha }}" \
-          --target-branch "${{ inputs.target_branch }}" \
-          --base-branch "${{ inputs.base_branch }}" \
+          --working-dir "../client-repo" \
           --retry
       continue-on-error: true
         
