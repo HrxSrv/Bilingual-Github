@@ -116,6 +116,12 @@ jobs:
         OPENAI_API_KEY: ${{ secrets.OPENAI_API_KEY }}
         GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
       run: |
+        # Ensure we're in the translation server repository root
+        pwd
+        ls -la
+        echo "Looking for translate.py..."
+        ls -la translate.py
+        
         python translate.py \
           --repository "${{ inputs.client_repo }}" \
           --pr-number "${{ inputs.pr_number }}" \
@@ -136,7 +142,12 @@ jobs:
       run: |
         echo "Translation failed, attempting retry after 30 seconds..."
         sleep 30
-        python ../bilingual-github/translate.py \
+        
+        # Debug info for retry
+        pwd
+        ls -la translate.py
+        
+        python translate.py \
           --repository "${{ inputs.client_repo }}" \
           --pr-number "${{ inputs.pr_number }}" \
           --files '${{ inputs.files_metadata }}' \
