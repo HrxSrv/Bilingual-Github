@@ -7,15 +7,63 @@ import re
 import hashlib
 import json
 from datetime import datetime, timedelta
+import subprocess
 
 script_dir = os.path.dirname(__file__)
 src_dir = os.path.abspath(os.path.join(script_dir, '..', '..', 'src'))
 sys.path.insert(0, src_dir)
-
-from utils.translation import translate_text
+ 
+from utils.translation import translate_text, translate_incremental
 
 TARGET_LANGUAGES = ["en", "ja"]
 COMMIT_HASH_FILE = ".translation_commits.json"
+
+# Incremental translation thresholds
+DIFF_THRESHOLD_PERCENT = 30  # If diff > 30%, use full translation
+LINE_COUNT_THRESHOLD = 100   # If lines <= 100, use full translation
+
+def calculate_diff_percentage(file_path, current_commit_hash):
+    """
+    Calculate the percentage of lines changed in a file.
+    Returns: (diff_percentage, line_count, base_content)
+    Returns: (None, None, None) if git command fails or base doesn't exist
+    """
+    try:
+        # Get base version using git
+        result = subprocess.run(
+            ['git', 'show', f'HEAD^:{file_path}'],
+            capture_output=True,
+            text=True,
+            encoding='utf-8'
+        )
+        
+        if result.returncode != 0:
+            return None, None, None
+        
+        base_content = result.stdout
+        current_content = read_file(file_path)
+        
+        # Calculate diff
+        base_lines = base_content.splitlines()
+        current_lines = current_content.splitlines()
+        
+        diff = list(unified_diff(base_lines, current_lines, lineterm=''))
+        
+        # Count added and removed lines
+        added = sum(1 for line in diff if line.startswith('+') and not line.startswith('+++'))
+        removed = sum(1 for line in diff if line.startswith('-') and not line.startswith('---'))
+        
+        total_lines = max(len(base_lines), len(current_lines))
+        if total_lines == 0:
+            return 0, 0, base_content
+        
+        diff_percentage = ((added + removed) / total_lines) * 100
+        
+        return diff_percentage, len(current_lines), base_content
+        
+    except Exception as e:
+        print(f"Error calculating diff: {e}")
+        return None, None, None
 
 def detect_language(content):
     """Simple language detection based on character patterns"""
@@ -213,14 +261,35 @@ def sync_translations(original_file, commit_history, current_commit_hash):
     content = read_file(processed_file)
     target_langs = [lang for lang in TARGET_LANGUAGES if lang != source_lang]
     
+    # Calculate diff percentage for incremental translation decision
+    diff_pct, line_count, base_content = calculate_diff_percentage(processed_file, current_commit_hash)
+    
     translated = False
     for lang in target_langs:
         translated_file = get_translated_path(original_file, lang)
         translated_file.parent.mkdir(parents=True, exist_ok=True)
         
-        # Always translate if source file changed
-        print(f"Translating {original_file} ({source_lang}) → {translated_file} ({lang})")
-        translated_content = translate_text(content, lang)
+        # Determine if incremental mode should be used
+        use_incremental = False
+        if (diff_pct is not None and 
+            diff_pct < DIFF_THRESHOLD_PERCENT and 
+            line_count > LINE_COUNT_THRESHOLD and
+            translated_file.exists()):
+            use_incremental = True
+        
+        # Translate based on mode
+        if use_incremental:
+            print(f"Using incremental translation for {original_file} (diff: {diff_pct:.1f}%, lines: {line_count})")
+            existing_translation = read_file(str(translated_file))
+            translated_content = translate_incremental(base_content, content, existing_translation, lang)
+            
+            # Fall back to full translation if incremental fails
+            if not translated_content:
+                print(f"Incremental translation failed, falling back to full translation")
+                translated_content = translate_text(content, lang)
+        else:
+            print(f"Using full translation for {original_file}")
+            translated_content = translate_text(content, lang)
         
         if translated_content:
             translated_file.write_text(translated_content, encoding='utf-8')
