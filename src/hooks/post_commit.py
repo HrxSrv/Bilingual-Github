@@ -280,7 +280,7 @@ def sync_translations(original_file, commit_history, current_commit_hash):
         
         if (diff_pct is not None and 
             diff_pct < DIFF_THRESHOLD_PERCENT and 
-            line_count > LINE_COUNT_THRESHOLD and
+            line_count < LINE_COUNT_THRESHOLD and
             translated_file.exists()):
             use_incremental = True
             print(f"  ✓ Decision: USE INCREMENTAL MODE")
@@ -291,7 +291,7 @@ def sync_translations(original_file, commit_history, current_commit_hash):
             elif diff_pct >= DIFF_THRESHOLD_PERCENT:
                 print(f"    Reason: diff_pct ({diff_pct:.1f}%) >= threshold ({DIFF_THRESHOLD_PERCENT}%)")
             elif line_count <= LINE_COUNT_THRESHOLD:
-                print(f"    Reason: line_count ({line_count}) <= threshold ({LINE_COUNT_THRESHOLD})")
+                print(f"    Reason: line_count ({line_count}) >= threshold ({LINE_COUNT_THRESHOLD})")
             elif not translated_file.exists():
                 print(f"    Reason: translated file does not exist")
         
