@@ -2,244 +2,126 @@ name: Translate Markdown Files
 
 on:
   workflow_call:
-    inputs:
-      files_metadata:
-        description: 'JSON array of file metadata objects'
-        required: true
-        type: string
-      ignore_patterns:
-        description: 'JSON array of ignore patterns'
-        required: false
-        type: string
-        default: '[]'
-      pr_number:
-        description: 'Pull request number'
-        required: true
-        type: number
-      pr_head_sha:
-        description: 'PR head SHA'
-        required: true
-        type: string
-      pr_base_sha:
-        description: 'PR base SHA'
-        required: true
-        type: string
-      pr_title:
-        description: 'PR title'
-        required: false
-        type: string
-        default: ''
-      pr_author:
-        description: 'PR author'
-        required: false
-        type: string
-        default: ''
-      client_repo:
-        description: 'Client repository name'
-        required: true
-        type: string
-      target_branch:
-        description: 'Target branch for the PR'
-        required: true
-        type: string
-      base_branch:
-        description: 'Base branch for the PR'
-        required: true
-        type: string
-      commit_hash:
-        description: 'Commit hash'
-        required: true
-        type: string
     secrets:
       OPENAI_API_KEY:
-        description: 'OpenAI API key for translation'
         required: true
+    inputs:
+      is_initial_setup:
+        required: false
+        type: boolean
+        default: false
+        description: 'Whether this is the initial setup run'
+      changed_files:
+        required: false
+        type: string
+        default: ''
+        description: 'Comma-separated list of changed files'
+      deleted_files:
+        required: false
+        type: string
+        default: ''
+        description: 'Comma-separated list of deleted files'
+      commit_hash:
+        required: false
+        type: string
+        default: ''
+        description: 'Current commit hash'
+      is_pr:
+        required: false
+        type: boolean
+        default: false
+        description: 'Whether this is a PR event'
+      pr_number:
+        required: false
+        type: string
+        default: ''
+        description: 'PR number if applicable'
+      target_branch:
+        required: false
+        type: string
+        default: ''
+        description: 'Target branch for PR commits'
 
 permissions:
   contents: write
   pull-requests: write
 
 jobs:
-  translate:
+  translate-markdown:
     runs-on: ubuntu-latest
-    
+
     steps:
-    - name: Checkout translation server repository
-      uses: actions/checkout@v4
-      with:
-        repository: hrxsrv/bilingual-github
-        token: ${{ secrets.GITHUB_TOKEN }}
-        path: translation-server
-      
-    - name: Checkout client repository
-      uses: actions/checkout@v4
-      with:
-        repository: ${{ inputs.client_repo }}
-        token: ${{ secrets.GITHUB_TOKEN }}
-        path: client-repo
-        ref: ${{ inputs.target_branch }}
-        fetch-depth: 0
-        
-    - name: Set up Python
-      uses: actions/setup-python@v4
-      with:
-        python-version: '3.11'
-        
-    - name: Install dependencies
-      run: |
-        python -m pip install --upgrade pip
-        pip install openai requests gitpython
-        
-    - name: Validate inputs
-      id: validate
-      run: |
-        if [ -z "${{ inputs.client_repo }}" ]; then
-          echo "Error: Missing client repository"
-          exit 1
-        fi
-        if [ -z "${{ inputs.pr_number }}" ]; then
-          echo "Error: Missing PR number"
-          exit 1
-        fi
-        if [ "${{ inputs.files_metadata }}" = "[]" ] || [ -z "${{ inputs.files_metadata }}" ]; then
-          echo "Error: No files to process"
-          exit 1
-        fi
-        echo "Input validation successful"
-        echo "Files to process: ${{ inputs.files_metadata }}"
-        
-    - name: Configure Git
-      run: |
-        cd client-repo
-        git config user.name "Translation Bot"
-        git config user.email "translation-bot@github.com"
-        
-    - name: Execute translation script
-      id: translate
-      env:
-        OPENAI_API_KEY: ${{ secrets.OPENAI_API_KEY }}
-        GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-      run: |
-        cd translation-server
-        python translate.py \
-          --repository "${{ inputs.client_repo }}" \
-          --pr-number "${{ inputs.pr_number }}" \
-          --files '${{ inputs.files_metadata }}' \
-          --ignore-patterns '${{ inputs.ignore_patterns }}' \
-          --working-dir "../client-repo"
-      continue-on-error: true
-      
-    - name: Handle translation failure with retry
-      if: steps.translate.outcome == 'failure'
-      env:
-        OPENAI_API_KEY: ${{ secrets.OPENAI_API_KEY }}
-        GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-      run: |
-        echo "Translation failed, attempting retry after 30 seconds..."
-        sleep 30
-        
-        # Debug info for retry
-        cd translation-server
-        pwd
-        ls -la translate.py
-        
-        python translate.py \
-          --repository "${{ inputs.client_repo }}" \
-          --pr-number "${{ inputs.pr_number }}" \
-          --files '${{ inputs.files_metadata }}' \
-          --ignore-patterns '${{ inputs.ignore_patterns }}' \
-          --working-dir "../client-repo" \
-          --retry
-      continue-on-error: true
-        
-    - name: Commit and push changes
-      id: commit
-      run: |
-        cd client-repo
-        
-        # Check if there are any changes to commit
-        if [ -n "$(git status --porcelain)" ]; then
-          echo "Changes detected, committing..."
-          git add .
+      - name: Checkout Translation Tools Repository
+        uses: actions/checkout@v3
+        with:
+          repository: rimoapp/bilingual-github
+          path: bilingual-github
+
+      - name: Checkout Target Repository
+        uses: actions/checkout@v3
+        with:
+          path: target-repo
+          fetch-depth: 0
+
+      - name: Set Up Python
+        uses: actions/setup-python@v4
+        with:
+          python-version: '3.8'
+
+      - name: Install Translation Dependencies
+        working-directory: bilingual-github
+        run: |
+          python -m pip install --upgrade pip
+          pip install -r requirements.txt
+
+      - name: Configure Git User
+        working-directory: target-repo
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "github-actions[bot]@users.noreply.github.com"
+
+      - name: Switch to target branch for PR
+        if: inputs.is_pr == true
+        working-directory: target-repo
+        run: |
+          git checkout ${{ inputs.target_branch }}
+
+      - name: Generate Markdown Translations
+        working-directory: target-repo
+        env:
+          OPENAI_API_KEY: ${{ secrets.OPENAI_API_KEY }}
+          IS_INITIAL_SETUP: ${{ inputs.is_initial_setup }}
+          CHANGED_FILES: ${{ inputs.changed_files }}
+          DELETED_FILES: ${{ inputs.deleted_files }}
+          COMMIT_HASH: ${{ inputs.commit_hash }}
+          IS_PR: ${{ inputs.is_pr }}
+        run: |
+          echo "Debug: OPENAI_API_KEY is set: $([ -n "$OPENAI_API_KEY" ] && echo "yes" || echo "no")"
           
-          # Create a descriptive commit message
-          COMMIT_MSG="🌐 Auto-translate markdown files for PR #${{ inputs.pr_number }} [skip-translation]"
-          if [ -n "${{ inputs.pr_title }}" ]; then
-            COMMIT_MSG="🌐 Auto-translate markdown files for PR #${{ inputs.pr_number }}: ${{ inputs.pr_title }} [skip-translation]"
+          if [ "$IS_INITIAL_SETUP" = "true" ]; then
+            echo "Performing initial setup translation"
+            OPENAI_API_KEY="${OPENAI_API_KEY}" python ../bilingual-github/src/hooks/post_commit.py --initial-setup --commit-hash "$COMMIT_HASH"
+          elif [ -n "$CHANGED_FILES" ] || [ -n "$DELETED_FILES" ]; then
+            echo "Translating changed files: $CHANGED_FILES"
+            echo "Deleting translated files for: $DELETED_FILES"
+            OPENAI_API_KEY="${OPENAI_API_KEY}" python ../bilingual-github/src/hooks/post_commit.py --files "$CHANGED_FILES" --deleted-files "$DELETED_FILES" --commit-hash "$COMMIT_HASH"
+          else
+            echo "Translating all markdown files"
+            OPENAI_API_KEY="${OPENAI_API_KEY}" python ../bilingual-github/src/hooks/post_commit.py --commit-hash "$COMMIT_HASH"
           fi
-          
-          git commit -m "$COMMIT_MSG"
-          
-          # Push changes
-          git push origin HEAD
-          echo "Changes committed and pushed successfully"
-          echo "has_changes=true" >> $GITHUB_OUTPUT
-        else
-          echo "No changes to commit"
-          echo "has_changes=false" >> $GITHUB_OUTPUT
-        fi
-      continue-on-error: true
-      
-    - name: Report success
-      if: steps.translate.outcome == 'success' && steps.commit.outcome == 'success' && steps.commit.outputs.has_changes == 'true'
-      uses: actions/github-script@v7
-      with:
-        github-token: ${{ secrets.GITHUB_TOKEN }}
-        script: |
-          const filesMetadata = JSON.parse('${{ inputs.files_metadata }}');
-          const fileCount = filesMetadata.length;
-          const filesList = filesMetadata.map(f => `- \`${f.path}\` (${f.language} → ${f.language === 'en' ? 'ja' : 'en'})`).join('\n');
-          
-          github.rest.issues.createComment({
-            issue_number: ${{ inputs.pr_number }},
-            owner: context.repo.owner,
-            repo: '${{ inputs.client_repo }}'.split('/')[1],
-            body: `✅ **Markdown translation completed successfully!**
-            
-            Translated ${fileCount} file(s):
-            ${filesList}
-            
-            🤖 _Automated translation by translation service_`
-          });
-          
-    - name: Report no changes
-      if: steps.translate.outcome == 'success' && steps.commit.outputs.has_changes == 'false'
-      uses: actions/github-script@v7
-      with:
-        github-token: ${{ secrets.GITHUB_TOKEN }}
-        script: |
-          github.rest.issues.createComment({
-            issue_number: ${{ inputs.pr_number }},
-            owner: context.repo.owner,
-            repo: '${{ inputs.client_repo }}'.split('/')[1],
-            body: `ℹ️ **Translation completed with no changes**
-            
-            All target translation files are already up to date.
-            
-            🤖 _Automated translation by translation service_`
-          });
-          
-    - name: Report failure
-      if: steps.translate.outcome == 'failure' || steps.commit.outcome == 'failure'
-      uses: actions/github-script@v7
-      with:
-        github-token: ${{ secrets.GITHUB_TOKEN }}
-        script: |
-          github.rest.issues.createComment({
-            issue_number: ${{ inputs.pr_number }},
-            owner: context.repo.owner,
-            repo: '${{ inputs.client_repo }}'.split('/')[1],
-            body: `❌ **Markdown translation failed**
-            
-            There was an error during the translation process. Please check the [workflow logs](https://github.com/${{ github.repository }}/actions/runs/${{ github.run_id }}) for details.
-            
-            🤖 _Automated translation by translation service_`
-          });
-        
-    - name: Cleanup on failure
-      if: failure()
-      run: |
-        cd client-repo
-        git reset --hard HEAD
-        git clean -fd
-        echo "Cleaned up any partial changes"
+
+      - name: Commit and Push Translations
+        working-directory: target-repo
+        run: |
+          git add -A
+          if git diff --cached --quiet; then
+            echo "No changes to commit"
+          else
+            if [ "${{ inputs.is_pr }}" = "true" ]; then
+              git commit -m "Update markdown translations [skip-translation]"
+              git push origin ${{ inputs.target_branch }}
+            else
+              git commit -m "Update markdown translations [skip-translation]"
+              git push
+            fi
+          fi
