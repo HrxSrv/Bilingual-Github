@@ -271,11 +271,29 @@ def sync_translations(original_file, commit_history, current_commit_hash):
         
         # Determine if incremental mode should be used
         use_incremental = False
+        
+        # Debug logging for incremental mode decision
+        print(f"\n[DEBUG] Incremental mode decision for {processed_file} -> {translated_file}:")
+        print(f"  - diff_pct: {diff_pct} (threshold: < {DIFF_THRESHOLD_PERCENT})")
+        print(f"  - line_count: {line_count} (threshold: > {LINE_COUNT_THRESHOLD})")
+        print(f"  - translated_file.exists(): {translated_file.exists()}")
+        
         if (diff_pct is not None and 
             diff_pct < DIFF_THRESHOLD_PERCENT and 
             line_count > LINE_COUNT_THRESHOLD and
             translated_file.exists()):
             use_incremental = True
+            print(f"  ✓ Decision: USE INCREMENTAL MODE")
+        else:
+            print(f"  ✗ Decision: USE FULL TRANSLATION MODE")
+            if diff_pct is None:
+                print(f"    Reason: diff_pct is None (git diff failed or first commit)")
+            elif diff_pct >= DIFF_THRESHOLD_PERCENT:
+                print(f"    Reason: diff_pct ({diff_pct:.1f}%) >= threshold ({DIFF_THRESHOLD_PERCENT}%)")
+            elif line_count <= LINE_COUNT_THRESHOLD:
+                print(f"    Reason: line_count ({line_count}) <= threshold ({LINE_COUNT_THRESHOLD})")
+            elif not translated_file.exists():
+                print(f"    Reason: translated file does not exist")
         
         # Translate based on mode
         if use_incremental:
