@@ -54,7 +54,7 @@ jobs:
       - name: Checkout Translation Tools Repository
         uses: actions/checkout@v3
         with:
-          repository: rimoapp/bilingual-github
+          repository: HrxSrv/bilingual-github
           path: bilingual-github
 
       - name: Checkout Target Repository
