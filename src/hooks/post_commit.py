@@ -262,7 +262,13 @@ def sync_translations(original_file, commit_history, current_commit_hash):
     target_langs = [lang for lang in TARGET_LANGUAGES if lang != source_lang]
     
     # Calculate diff percentage for incremental translation decision
-    diff_pct, line_count, base_content = calculate_diff_percentage(processed_file, current_commit_hash)
+    diff_pct, line_count, changed_lines, base_content = calculate_diff_percentage(processed_file, current_commit_hash)
+    
+    print(f"\n[DEBUG] Diff calculation results for {processed_file}:")
+    print(f"  - diff_pct: {diff_pct}")
+    print(f"  - line_count: {line_count}")
+    print(f"  - changed_lines: {changed_lines}")
+    print(f"  - base_content length: {len(base_content) if base_content else 'None'} characters")
     
     translated = False
     for lang in target_langs:
@@ -275,12 +281,15 @@ def sync_translations(original_file, commit_history, current_commit_hash):
         # Debug logging for incremental mode decision
         print(f"\n[DEBUG] Incremental mode decision for {processed_file} -> {translated_file}:")
         print(f"  - diff_pct: {diff_pct} (threshold: < {DIFF_THRESHOLD_PERCENT})")
+        print(f"  - changed_lines: {changed_lines} (threshold: < {MAX_CHANGED_LINES})")
         print(f"  - line_count: {line_count} (threshold: > {LINE_COUNT_THRESHOLD})")
         print(f"  - translated_file.exists(): {translated_file.exists()}")
         
         if (diff_pct is not None and 
-            diff_pct < DIFF_THRESHOLD_PERCENT and 
-            line_count < LINE_COUNT_THRESHOLD and
+            diff_pct < DIFF_THRESHOLD_PERCENT and
+            changed_lines is not None and
+            changed_lines < MAX_CHANGED_LINES and
+            line_count > LINE_COUNT_THRESHOLD and
             translated_file.exists()):
             use_incremental = True
             print(f"  ✓ Decision: USE INCREMENTAL MODE")
@@ -290,15 +299,24 @@ def sync_translations(original_file, commit_history, current_commit_hash):
                 print(f"    Reason: diff_pct is None (git diff failed or first commit)")
             elif diff_pct >= DIFF_THRESHOLD_PERCENT:
                 print(f"    Reason: diff_pct ({diff_pct:.1f}%) >= threshold ({DIFF_THRESHOLD_PERCENT}%)")
+            elif changed_lines is None or changed_lines >= MAX_CHANGED_LINES:
+                print(f"    Reason: changed_lines ({changed_lines}) >= threshold ({MAX_CHANGED_LINES})")
             elif line_count <= LINE_COUNT_THRESHOLD:
-                print(f"    Reason: line_count ({line_count}) >= threshold ({LINE_COUNT_THRESHOLD})")
+                print(f"    Reason: line_count ({line_count}) <= threshold ({LINE_COUNT_THRESHOLD})")
             elif not translated_file.exists():
                 print(f"    Reason: translated file does not exist")
         
         # Translate based on mode
         if use_incremental:
-            print(f"Using incremental translation for {original_file} (diff: {diff_pct:.1f}%, lines: {line_count})")
+            print(f"Using incremental translation for {original_file} (diff: {diff_pct:.1f}%, changed: {changed_lines} lines)")
             existing_translation = read_file(str(translated_file))
+            
+            print(f"\n[DEBUG] Incremental translation inputs:")
+            print(f"  - base_content: {len(base_content)} chars, {len(base_content.splitlines())} lines")
+            print(f"  - current_content: {len(content)} chars, {len(content.splitlines())} lines")
+            print(f"  - existing_translation: {len(existing_translation)} chars, {len(existing_translation.splitlines())} lines")
+            print(f"  - target_lang: {lang}")
+            
             translated_content = translate_incremental(base_content, content, existing_translation, lang)
             
             # Fall back to full translation if incremental fails

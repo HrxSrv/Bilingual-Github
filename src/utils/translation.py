@@ -55,6 +55,12 @@ def translate_incremental(base_content, current_content, existing_translation, t
     Returns:
         Updated translation with only the necessary changes applied, or None on failure
     """
+    print(f"\n[DEBUG] translate_incremental called:")
+    print(f"  - base_content: {len(base_content)} chars")
+    print(f"  - current_content: {len(current_content)} chars")
+    print(f"  - existing_translation: {len(existing_translation)} chars")
+    print(f"  - target_lang: {target_lang}")
+    
     prompt = f"""You are translating a markdown document to {target_lang}.
 
 I will provide you with three versions of the document:
@@ -69,19 +75,16 @@ Your task:
 - Maintain the same markdown structure and formatting
 
 BASE VERSION:
----
+
 {base_content}
----
 
 CURRENT VERSION:
----
+
 {current_content}
----
 
 EXISTING TRANSLATION:
----
+
 {existing_translation}
----
 
 Please provide the updated translation with only the necessary changes applied."""
 
@@ -89,12 +92,18 @@ Please provide the updated translation with only the necessary changes applied."
         url = "https://api.openai.com/v1/chat/completions"
         
         payload = {
-            "model": "gpt-4o-mini",
+            "model": "gpt-4",
             "messages": [
                 {"role": "system", "content": f"You are a precise translator. Translate only the changed portions to {target_lang}."},
                 {"role": "user", "content": prompt}
             ]
         }
+        
+        print(f"\n[DEBUG] Sending request to OpenAI API:")
+        print(f"  - model: gpt-4")
+        print(f"  - prompt length: {len(prompt)} chars")
+        print(f"  - system message: 'You are a precise translator. Translate only the changed portions to {target_lang}.'")
+        print(f"  - Prompt preview (first 200 chars): {prompt[:200]}...")
         
         headers = {
             "Authorization": f"Bearer {os.getenv('OPENAI_API_KEY', '').strip()}"
@@ -102,15 +111,25 @@ Please provide the updated translation with only the necessary changes applied."
         
         response = requests.post(url, json=payload, headers=headers)
         
+        print(f"\n[DEBUG] OpenAI API response:")
+        print(f"  - status_code: {response.status_code}")
+        
         if response.status_code == 200:
             result = response.json()
             translation = result["choices"][0]["message"]["content"]
+            print(f"  - ✓ SUCCESS: translation received")
+            print(f"  - translation length: {len(translation)} chars")
+            print(f"  - translation lines: {len(translation.splitlines())} lines")
+            print(f"  - Translation preview (first 200 chars): {translation[:200]}...")
             return translation
         else:
-            print(f"Incremental translation failed: {response.status_code}")
-            print(f"Response: {response.text}")
+            print(f"  - ✗ ERROR: Incremental translation failed")
+            print(f"  - Response: {response.text}")
             return None
             
     except Exception as e:
-        print(f"Error in incremental translation: {e}")
+        print(f"\n[DEBUG] ✗ Exception in incremental translation: {e}")
+        import traceback
+        traceback.print_exc()
         return None
+
